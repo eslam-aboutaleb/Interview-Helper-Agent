@@ -4,7 +4,13 @@ WORKDIR /app
 
 # Copy package.json and package-lock.json first for better layer caching
 COPY package*.json ./
-RUN npm install
+
+# Install dependencies with specific flags to prevent hanging
+# --no-fund to avoid funding messages
+# --loglevel=verbose for detailed logs
+# CI=true to run in CI mode which prevents interactive prompts
+ENV CI=true
+RUN npm install --no-fund --loglevel=verbose --no-audit
 
 # Copy the rest of the frontend source code
 COPY ./src ./src
@@ -13,8 +19,9 @@ COPY ./tsconfig.json ./
 COPY ./postcss.config.js ./
 COPY ./tailwind.config.js ./
 
-# Build the React app
-RUN npm run build
+# Build the React app with increased memory limit and production flag
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+RUN npm run build --production
 
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
