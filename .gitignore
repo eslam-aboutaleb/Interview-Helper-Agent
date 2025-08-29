@@ -1,3 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+
 # Logs
 logs
 *.log
@@ -23,3 +37,4 @@ dist-ssr
 *.sln
 *.sw?
 .env
+*tmp.Dockerfile
