@@ -2,15 +2,18 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
+# Set environment variables for optimized builds
+ENV CI=true
+ENV NODE_ENV=production 
+ENV GENERATE_SOURCEMAP=false
+# Increase Node memory limit - using 4GB instead of 2GB
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Copy package.json and package-lock.json first for better layer caching
 COPY package*.json ./
 
 # Install dependencies with specific flags to prevent hanging
-# --no-fund to avoid funding messages
-# --loglevel=verbose for detailed logs
-# CI=true to run in CI mode which prevents interactive prompts
-ENV CI=true
-RUN npm install --no-fund --loglevel=verbose --no-audit
+RUN npm ci --no-fund --no-audit --prefer-offline --silent
 
 # Copy the rest of the frontend source code
 COPY ./src ./src
@@ -19,9 +22,8 @@ COPY ./tsconfig.json ./
 COPY ./postcss.config.js ./
 COPY ./tailwind.config.js ./
 
-# Build the React app with increased memory limit and production flag
-ENV NODE_OPTIONS="--max-old-space-size=2048"
-RUN npm run build --production
+# Build the React app with production optimizations
+RUN npm run build
 
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
