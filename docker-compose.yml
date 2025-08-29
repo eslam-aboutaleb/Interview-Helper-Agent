@@ -1,0 +1,54 @@
+services:
+  db:
+    # PostgreSQL database service
+    image: postgres:15
+    container_name: interview-prep-db
+    environment:
+      POSTGRES_DB: interview_prep
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432" # Expose PostgreSQL port
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist database data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql # Initialize DB with SQL script
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"] # Check DB readiness
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  backend:
+    # FastAPI backend service
+    build: ./backend
+    container_name: interview-prep-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/interview_prep
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your-gemini-api-key}
+    ports:
+      - "8000:8000" # Expose backend API port
+    depends_on:
+      db:
+        condition: service_healthy # Wait for DB to be healthy
+    volumes:
+      - ./backend:/app # Mount backend source code
+    command:
+      ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  frontend:
+    # React frontend service
+    build: ./frontend
+    container_name: interview-prep-frontend
+    ports:
+      - "3000:3000" # Expose frontend port
+    depends_on:
+      - backend # Wait for backend to start
+    volumes:
+      - ./frontend:/app # Mount frontend source code
+      - /app/node_modules # Persist node_modules for faster installs
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    command: ["npm", "start"] # Start React development server
+
+volumes:
+  postgres_data:
