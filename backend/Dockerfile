@@ -3,33 +3,29 @@ FROM python:3.11-slim
 # Set the working directory within the container
 WORKDIR /app
 
+# Install virtualenv
+RUN pip install virtualenv
+
 # Create a non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN useradd -m appuser
 
-# Copy requirements file
-COPY requirements.txt .
+# Create virtual environment and set ownership
+RUN python -m virtualenv /app/venv && \
+    chown -R appuser:appuser /app
 
-# Install virtualenv, set up virtual environment, and install dependencies
-RUN pip install virtualenv && \
-    virtualenv /app/venv && \
-    . /app/venv/bin/activate && \
-    pip install --no-cache-dir -r requirements.txt
+# Switch to non-root user
+USER appuser
+
+# Copy requirements file and install dependencies in the virtual environment
+COPY --chown=appuser:appuser requirements.txt .
+RUN /app/venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    /app/venv/bin/pip install uvicorn python-multipart
 
 # Copy the rest of the application code to the container
-COPY . .
-
-# Set ownership to the non-root user
-RUN chown -R appuser:appuser /app
-
-# Switch to the non-root user
-USER appuser
+COPY --chown=appuser:appuser . .
 
 # Expose port 8000 for the FastAPI application
 EXPOSE 8000
 
-# Set environment variable to use the virtual environment
-ENV PATH="/app/venv/bin:$PATH"
-
-# Start the FastAPI server using uvicorn within the virtual environment
-# Use bash to ensure the virtual environment is activated
-CMD ["/bin/bash", "-c", "source /app/venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Start the FastAPI server using the virtual environment
+CMD ["/app/venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

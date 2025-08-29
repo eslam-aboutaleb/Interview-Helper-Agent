@@ -33,7 +33,17 @@ services:
     volumes:
       - ./backend:/app # Mount backend source code
     command:
-      ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      [
+        "/app/venv/bin/python",
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
 
   frontend:
     # React frontend service
