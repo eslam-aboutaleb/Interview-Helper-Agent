@@ -31,4 +31,5 @@ EXPOSE 8000
 ENV PATH="/app/venv/bin:$PATH"
 
 # Start the FastAPI server using uvicorn within the virtual environment
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use bash to ensure the virtual environment is activated
+CMD ["/bin/bash", "-c", "source /app/venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8000"]
