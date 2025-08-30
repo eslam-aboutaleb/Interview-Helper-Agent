@@ -12,9 +12,12 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # Copy package.json and package-lock.json first for better layer caching
 COPY package*.json ./
 
-# Install dependencies and TypeScript type definitions
+# Install dependencies and TypeScript type definitions with exact versions
 RUN npm ci --no-fund --no-audit --prefer-offline --silent && \
-    npm install --save-dev @types/react @types/react-dom
+    npm install --save-dev @types/react@18.2.45 @types/react-dom@18.2.17 && \
+    # Create tsconfig with jsx runtime settings
+    echo '{ "compilerOptions": { "jsx": "react-jsx", "esModuleInterop": true, "skipLibCheck": true } }' > ./tsconfig.temp.json && \
+    cat ./tsconfig.temp.json
 
 # Copy the rest of the frontend source code
 COPY ./src ./src
