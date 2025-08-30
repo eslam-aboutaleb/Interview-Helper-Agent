@@ -12,8 +12,9 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # Copy package.json and package-lock.json first for better layer caching
 COPY package*.json ./
 
-# Install dependencies with specific flags to prevent hanging
-RUN npm ci --no-fund --no-audit --prefer-offline --silent
+# Install dependencies and TypeScript type definitions
+RUN npm ci --no-fund --no-audit --prefer-offline --silent && \
+    npm install --save-dev @types/react @types/react-dom
 
 # Copy the rest of the frontend source code
 COPY ./src ./src
