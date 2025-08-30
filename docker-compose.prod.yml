@@ -42,7 +42,7 @@ services:
           memory: 512M
 
   frontend:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: interview-prep-frontend
@@ -57,7 +57,7 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1'
+          cpus: "1"
 
 volumes:
   postgres_data:
