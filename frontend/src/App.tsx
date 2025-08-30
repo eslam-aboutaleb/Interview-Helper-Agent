@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Questions from './pages/Questions';
 import Generate from './pages/Generate';
 import Stats from './pages/Stats';
+// Import JSX from react to fix the JSX IntrinsicElements issue
+import { JSX } from 'react';
 
 function App() {
   return (
