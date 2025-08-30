@@ -65,7 +65,7 @@ if [ -n "$EC2_PUBLIC_DNS" ]; then
     # Create a new .env file
     cat > .env << EOF
 # Gemini API Key
-GEMINI_API_KEY=AIzaSyAJYD-VgEMtCHQMyoGCes72z5UZyU75Z_U
+GEMINI_API_KEY=#############################
 
 # Database connection for Docker Compose setup
 DATABASE_URL=postgresql://postgres:postgres@db:5432/interviews
