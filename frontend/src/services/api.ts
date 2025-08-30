@@ -1,16 +1,16 @@
 import axios from 'axios';
 import { Question, QuestionSet, Stats, QuestionGenerateRequest, QuestionCreateRequest, QuestionUpdateRequest } from '../types';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-
+// The baseURL is removed. All requests are now relative to the current domain.
+// - On EC2, NGINX will proxy requests starting with /api to the backend.
+// - For local development, we will configure the React dev server proxy.
 const api = axios.create({
-  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor
+// Request interceptor (no changes needed)
 api.interceptors.request.use(
   (config) => {
     return config;
@@ -20,7 +20,7 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor
+// Response interceptor (no changes needed)
 api.interceptors.response.use(
   (response) => {
     return response;
@@ -31,10 +31,11 @@ api.interceptors.response.use(
   }
 );
 
+// The API calls are already correctly using the /api prefix, so no changes are needed here.
 export const questionsApi = {
-  generate: (data: QuestionGenerateRequest) => 
+  generate: (data: QuestionGenerateRequest) =>
     api.post<Question[]>('/api/questions/generate', data),
-  
+
   getAll: (params?: {
     skip?: number;
     limit?: number;
@@ -42,20 +43,20 @@ export const questionsApi = {
     question_type?: string;
     flagged_only?: boolean;
   }) => api.get<Question[]>('/api/questions/', { params }),
-  
-  getById: (id: number) => 
+
+  getById: (id: number) =>
     api.get<Question>(`/api/questions/${id}`),
-  
-  create: (data: QuestionCreateRequest) => 
+
+  create: (data: QuestionCreateRequest) =>
     api.post<Question>('/api/questions/', data),
-  
-  update: (id: number, data: QuestionUpdateRequest) => 
+
+  update: (id: number, data: QuestionUpdateRequest) =>
     api.put<Question>(`/api/questions/${id}`, data),
-  
-  delete: (id: number) => 
+
+  delete: (id: number) =>
     api.delete(`/api/questions/${id}`),
-  
-  getJobTitles: () => 
+
+  getJobTitles: () =>
     api.get<string[]>('/api/questions/job-titles/'),
 };
 
@@ -64,7 +65,7 @@ export const questionSetsApi = {
     skip?: number;
     limit?: number;
   }) => api.get<QuestionSet[]>('/api/questions/sets/', { params }),
-  
+
   create: (data: {
     name: string;
     description: string;
@@ -84,3 +85,4 @@ export const fetchQuestionSets = async (): Promise<QuestionSet[]> => {
 };
 
 export default api;
+
