@@ -31,6 +31,44 @@ declare module 'react-hot-toast';
 // Add JSX runtime declarations
 declare module 'react/jsx-runtime';
 declare module 'react/jsx-dev-runtime';
+
+// Add JSX IntrinsicElements interface
+declare namespace JSX {
+  interface IntrinsicElements {
+    div: any;
+    main: any;
+    nav: any;
+    header: any;
+    a: any;
+    button: any;
+    span: any;
+    h1: any;
+    h2: any;
+    h3: any;
+    h4: any;
+    h5: any;
+    h6: any;
+    p: any;
+    form: any;
+    input: any;
+    textarea: any;
+    select: any;
+    option: any;
+    label: any;
+    ul: any;
+    ol: any;
+    li: any;
+    table: any;
+    tr: any;
+    td: any;
+    th: any;
+    section: any;
+    img: any;
+    svg: any;
+    path: any;
+    [elemName: string]: any;
+  }
+}
 EOF
 
 # Create temporary Dockerfile with JSX runtime fix
@@ -51,10 +89,30 @@ COPY package*.json ./
 
 # Install dependencies with specific TypeScript definitions for React
 RUN npm ci --no-fund --no-audit --prefer-offline --silent && \
-    npm install --save-dev @types/react@18.2.45 @types/react-dom@18.2.17 @types/react-router-dom
+    npm install --save-dev @types/react@18.2.45 @types/react-dom@18.2.17 @types/react-router-dom@5.3.3
 
-# Create tsconfig with jsx runtime settings
-RUN echo '{ "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "react", "esModuleInterop": true, "skipLibCheck": true } }' > ./tsconfig.override.json
+# Create a comprehensive tsconfig override with JSX settings
+RUN echo '{ 
+  "compilerOptions": { 
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "es6"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  },
+  "include": ["src"]
+}' > ./tsconfig.override.json
 
 # Copy the rest of the frontend source code
 COPY ./src ./src
@@ -66,8 +124,8 @@ COPY ./tailwind.config.js ./
 # Copy custom declarations
 COPY ./custom.d.ts ./src/
 
-# Run build with tsx support
-RUN cat tsconfig.override.json > tsconfig.json && npm run build
+# Replace tsconfig.json with our fixed version and build
+RUN cp tsconfig.override.json tsconfig.json && npm run build
 
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
@@ -110,13 +168,24 @@ docker-compose -f docker-compose.prod.yml build db backend
 # Build the frontend with the fixed Dockerfile
 echo "Building frontend with JSX runtime fix..."
 cd frontend
-cp ../temp_fix/Dockerfile.jsx-fix Dockerfile.jsx-fix
-docker build -t interview-prep-frontend -f Dockerfile.jsx-fix .
-cd ..
+cp ../temp_fix/Dockerfile.jsx-fix Dockerfile
 
-# Start the containers
+# Override the frontend Dockerfile in docker-compose.prod.yml to use our fixed version
+cd ..
+echo "Creating temporary docker-compose override..."
+cat > temp_fix/docker-compose.override.yml << 'EOF'
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+EOF
+
+# Start the containers with override
 echo "Starting containers..."
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.prod.yml -f temp_fix/docker-compose.override.yml up -d
 
 # Clean up
 echo "Cleaning up temporary files..."
