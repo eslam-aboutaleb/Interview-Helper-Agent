@@ -2,7 +2,7 @@ import google.generativeai as genai
 import os
 import json
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
 # Set up logging
@@ -12,40 +12,45 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class GeminiService:
+    # Cache for model initialization
+    _model = None
+    _api_configured = False
+    
     def __init__(self):
-        """Initialize Gemini service and configure the API connection."""
+        """Initialize Gemini service and configure the API connection (lazy model loading)."""
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key or api_key == "your-gemini-api-key":
             logger.warning("GEMINI_API_KEY not set or using placeholder value.")
         
-        # Configure the API
-        genai.configure(api_key=api_key)
-        
-        # Try to initialize with the best available model
-        try:
-            # Try the updated model naming
-            self.model = genai.GenerativeModel('gemini-1.5-pro')
-            logger.info("Using gemini-1.5-pro model")
-        except Exception:
+        # Only configure API once
+        if not GeminiService._api_configured:
+            genai.configure(api_key=api_key)
+            GeminiService._api_configured = True
+            logger.info("Gemini API configured")
+    
+    def _get_model(self):
+        """Lazily initialize the model on first use"""
+        if GeminiService._model is None:
             try:
-                # Try the original model name
-                self.model = genai.GenerativeModel('gemini-pro')
-                logger.info("Using gemini-pro model")
-            except Exception:
-                # Last resort - use whatever model is available
+                # Try the latest model first (fastest, no API call)
+                GeminiService._model = genai.GenerativeModel('gemini-1.5-pro')
+                logger.info("Using gemini-1.5-pro model")
+            except Exception as e:
+                logger.warning(f"Failed to use gemini-1.5-pro: {e}, falling back to gemini-pro")
                 try:
-                    available_models = genai.list_models()
-                    for model in available_models:
-                        if "gemini" in model.name.lower() and "pro" in model.name.lower():
-                            logger.info(f"Using available model: {model.name}")
-                            self.model = genai.GenerativeModel(model.name)
-                            break
-                    else:
-                        # If no Gemini models found, raise error
-                        raise Exception("No Gemini Pro models available in your API key")
-                except Exception as e:
-                    logger.error(f"Error finding available models: {e}")
-                    raise Exception("Failed to initialize any Gemini model")
+                    # Fallback to older model name (no API call needed)
+                    GeminiService._model = genai.GenerativeModel('gemini-pro')
+                    logger.info("Using gemini-pro model")
+                except Exception as e2:
+                    logger.error(f"Failed to initialize any Gemini model: {e2}")
+                    raise Exception("Failed to initialize Gemini model - check API key and model availability")
+        
+        return GeminiService._model
+    
+    @property
+    def model(self):
+        """Property to access model with lazy initialization"""
+        return self._get_model()
 
     def generate_questions(self, job_title: str, count: int = 5, question_type: str = "mixed") -> List[Dict]:
         """Generate interview questions using Gemini AI.

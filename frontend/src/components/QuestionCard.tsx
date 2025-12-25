@@ -24,7 +24,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
       2: 'bg-primary-100 text-primary-800 border-primary-200',
       3: 'bg-warning-100 text-warning-800 border-warning-200',
       4: 'bg-error-100 text-error-800 border-error-200',
-      5: 'bg-purple-100 text-purple-800 border-purple-200',
+      5: 'bg-gray-100 text-gray-800 border-gray-200',
     };
     return colors[difficulty as keyof typeof colors] || colors[3];
   };
@@ -32,7 +32,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
   const getTypeColor = (type: string): string => {
     return type === 'technical' 
       ? 'bg-blue-100 text-blue-800 border-blue-200'
-      : 'bg-purple-100 text-purple-800 border-purple-200';
+      : 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   return (
@@ -94,7 +94,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
           <select
             value={question.difficulty}
             onChange={(e) => onUpdateDifficulty(question.id, parseInt(e.target.value))}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:border-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all duration-200"
+            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
           >
             {[1, 2, 3, 4, 5].map(level => (
               <option key={level} value={level}>Level {level}</option>

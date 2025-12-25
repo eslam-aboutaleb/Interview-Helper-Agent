@@ -102,7 +102,7 @@ const StatsPage: React.FC = () => {
           value={stats.total_question_sets}
           subtitle="Collections created"
           icon={Users}
-          color="purple"
+          color="gray"
           index={3}
         />
       </motion.div>
@@ -116,8 +116,8 @@ const StatsPage: React.FC = () => {
           transition={{ duration: 0.6, delay: 0.3 }}
         >
           <div className="flex items-center space-x-3 mb-8">
-            <div className="p-2 bg-purple-100 rounded-xl">
-              <PieChart className="w-6 h-6 text-purple-600" />
+            <div className="p-2 bg-gray-100 rounded-xl">
+              <PieChart className="w-6 h-6 text-gray-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900">Questions by Type</h2>
           </div>
@@ -136,7 +136,7 @@ const StatsPage: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <div className="flex items-center space-x-3">
                       <div className={`w-3 h-3 rounded-full ${
-                        type === 'technical' ? 'bg-blue-500' : 'bg-purple-500'
+                        type === 'technical' ? 'bg-blue-500' : 'bg-gray-500'
                       }`} />
                       <span className="capitalize font-semibold text-gray-700">{type}</span>
                     </div>
@@ -150,7 +150,7 @@ const StatsPage: React.FC = () => {
                       className={`h-3 rounded-full ${
                         type === 'technical' 
                           ? 'bg-gradient-to-r from-blue-500 to-blue-600' 
-                          : 'bg-gradient-to-r from-purple-500 to-purple-600'
+                          : 'bg-gradient-to-r from-gray-500 to-gray-600'
                       }`}
                       initial={{ width: 0 }}
                       animate={{ width: `${percentage}%` }}
@@ -231,7 +231,7 @@ const StatsPage: React.FC = () => {
           <p className="text-blue-100">Different job roles covered</p>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-8 rounded-2xl text-white shadow-strong">
+        <div className="bg-gradient-to-br from-gray-700 to-gray-800 p-8 rounded-2xl text-white shadow-strong">
           <div className="flex items-center space-x-4 mb-6">
             <div className="p-3 bg-white/20 rounded-xl">
               <Award className="w-6 h-6" />
@@ -239,7 +239,7 @@ const StatsPage: React.FC = () => {
             <h3 className="text-xl font-semibold">Difficulty Range</h3>
           </div>
           <p className="text-4xl font-bold mb-2">{stats.average_difficulty.toFixed(1)}/5</p>
-          <p className="text-purple-100">Average difficulty level</p>
+          <p className="text-gray-100">Average difficulty level</p>
         </div>
 
         <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-8 rounded-2xl text-white shadow-strong">

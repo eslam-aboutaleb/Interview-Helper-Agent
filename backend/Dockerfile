@@ -1,20 +1,43 @@
 FROM python:3.11-slim
 
-# Set the working directory within the container
+# Set environment variables to prevent debconf warnings
+ENV DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NOWARNINGS=yes
+
+# System dependencies (curl for healthcheck)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    python3-venv \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy requirements file
+# Set up virtual environment
+RUN python -m venv /app/venv
+
+# Make sure we use the virtualenv
+ENV PATH="/app/venv/bin:$PATH"
+ENV VIRTUAL_ENV="/app/venv"
+
+# Install Python deps in the virtual environment and create user in a single layer
 COPY requirements.txt .
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install gunicorn uvicorn python-multipart && \
+    useradd -m appuser && \
+    chown -R appuser:appuser /app
 
-# Copy the rest of the application code to the container
-COPY . .
+# Copy app code
+COPY --chown=appuser:appuser . .
 
-# Expose port 8000 for the FastAPI application
+# Switch to non-root user
+USER appuser
+
+# Expose internal port
 EXPOSE 8000
 
-# Start the FastAPI server using uvicorn
-# --host 0.0.0.0 allows connections from any IP
-# --port 8000 specifies the port to listen on
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "main:app", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "-b", "0.0.0.0:8000", \
+     "--workers", "2", \
+     "--timeout", "60"]

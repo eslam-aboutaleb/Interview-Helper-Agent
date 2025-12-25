@@ -22,14 +22,14 @@ const Header: React.FC = () => {
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-3 group">
             <motion.div 
-              className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl shadow-medium group-hover:shadow-strong transition-all duration-300"
+              className="p-2 bg-gradient-to-br from-gray-700 to-gray-800 rounded-xl shadow-medium group-hover:shadow-strong transition-all duration-300"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
               <Brain className="w-6 h-6 text-white" />
             </motion.div>
             <div className="flex flex-col">
-              <span className="text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+              <span className="text-xl font-bold bg-gradient-to-r from-gray-700 to-gray-800 bg-clip-text text-transparent">
                 InterviewPrep
               </span>
               <span className="text-xs text-gray-500 -mt-1">AI-Powered Platform</span>
@@ -47,7 +47,7 @@ const Header: React.FC = () => {
                 <motion.div
                   className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-200 ${
                     isActive(path)
-                      ? 'bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700 shadow-soft'
+                      ? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 shadow-soft'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                   whileHover={{ scale: 1.02 }}
@@ -58,7 +58,7 @@ const Header: React.FC = () => {
                 </motion.div>
                 {isActive(path) && (
                   <motion.div
-                    className="absolute bottom-0 left-1/2 w-1 h-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full"
+                    className="absolute bottom-0 left-1/2 w-1 h-1 bg-gradient-to-r from-gray-700 to-gray-800 rounded-full"
                     layoutId="activeIndicator"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -78,7 +78,7 @@ const Header: React.FC = () => {
                   to={path}
                   className={`p-2 rounded-lg transition-all duration-200 ${
                     isActive(path)
-                      ? 'bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700'
+                      ? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                   }`}
                 >

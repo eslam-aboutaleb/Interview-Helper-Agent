@@ -2,7 +2,7 @@
 
 A comprehensive AI-powered interview preparation platform that generates personalized interview questions using Google's Gemini AI, with full question management, organization, and statistics tracking capabilities.
 
-## 🚀 Quick Start
+## Quick Start
 
 1. **Clone and Setup**
    ```bash
@@ -23,11 +23,11 @@ A comprehensive AI-powered interview preparation platform that generates persona
    ```
 
 4. **Access the Application**
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:80
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
 
-## 📋 Features
+## Features
 
 ### Core Functionality
 - **AI Question Generation**: Generate tailored interview questions using Google Gemini AI
@@ -46,7 +46,7 @@ A comprehensive AI-powered interview preparation platform that generates persona
 - **Containerization**: Full Docker Compose setup for easy deployment
 - **Error Handling**: Comprehensive error handling and validation
 
-## 🏗️ Architecture
+## Architecture
 
 ### Frontend (React SPA)
 ```
@@ -80,7 +80,7 @@ db/
 └── init.sql          # Database schema and sample data
 ```
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Questions
 - `POST /api/questions/generate` - Generate new questions using AI
@@ -101,7 +101,7 @@ db/
 - `GET /` - API information
 - `GET /health` - Health check endpoint
 
-## 💾 Database Schema
+## Database Schema
 
 ### Questions Table
 ```sql
@@ -142,7 +142,7 @@ CREATE TABLE user_ratings (
 );
 ```
 
-## 🤖 Gemini AI Integration
+## Gemini AI Integration
 
 The platform integrates with Google's Gemini AI for intelligent question generation:
 
@@ -156,12 +156,12 @@ The platform integrates with Google's Gemini AI for intelligent question generat
 2. Add it to your `.env` file as `GEMINI_API_KEY=your-key-here`
 3. Restart the backend service
 
-## 🐳 Docker Setup
+## Docker Setup
 
 The application uses Docker Compose for easy development and deployment:
 
 ### Services
-- **Frontend**: React development server (port 3000)
+- **Frontend**: React development server (port 80)
 - **Backend**: FastAPI with hot reload (port 8000)
 - **Database**: PostgreSQL 15 (port 5432)
 
@@ -229,7 +229,7 @@ curl "http://localhost:8000/api/stats/"
 curl "http://localhost:8000/api/questions/?job_title=Software%20Engineer&question_type=technical"
 ```
 
-## 🧪 Testing
+## Testing
 
 The platform includes comprehensive error handling and validation:
 
@@ -238,7 +238,7 @@ The platform includes comprehensive error handling and validation:
 - **Error Responses**: Structured error messages with proper HTTP status codes
 - **Health Checks**: System health monitoring endpoints
 
-## 🚀 Deployment
+## Deployment
 
 For production deployment:
 
@@ -256,40 +256,3 @@ For production deployment:
    - Database schema is automatically created on startup
    - Sample data is inserted if tables are empty
 
-## ⚠️ Known Limitations
-
-1. **AI Dependencies**: Requires valid Gemini API key for full functionality
-2. **Single User**: Currently designed for single-user usage
-3. **Basic Authentication**: No user authentication system implemented
-4. **Limited Question Types**: Only supports technical and behavioral categories
-5. **File Storage**: No file upload/storage for question attachments
-
-## 🔮 Future Enhancements
-
-- User authentication and multi-user support
-- Question difficulty auto-assessment using AI
-- Interview simulation with voice/video features
-- Advanced analytics and progress tracking
-- Question sharing and community features
-- Integration with popular job platforms
-- Mobile app development
-- Advanced question categorization and tagging
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📞 Support
-
-For issues and questions:
-- Check the API documentation at `/docs`
-- Review the Docker logs for troubleshooting
-- Ensure all environment variables are properly set

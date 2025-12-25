@@ -1,0 +1,31 @@
+# Development compose file with bind mounts for FAST live reload
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  backend:
+    volumes:
+      # Mount source code directly for live changes (no rebuild needed)
+      - ./backend:/app
+      # Exclude node_modules/venv if they exist locally
+      - /app/venv
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    volumes:
+      # Mount source code for live React hot reload
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+      # Exclude node_modules to avoid permission issues
+      - /app/node_modules
+    command: npm start
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
+volumes:
+  postgres_data:

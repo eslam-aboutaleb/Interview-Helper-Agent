@@ -158,11 +158,11 @@ body {
 .difficulty-2 { background-color: #3b82f6; }
 .difficulty-3 { background-color: #f59e0b; }
 .difficulty-4 { background-color: #ef4444; }
-.difficulty-5 { background-color: #8b5cf6; }
+.difficulty-5 { background-color: #6b7280; }
 
 /* Question type badges */
 .type-technical { background-color: #3b82f6; }
-.type-behavioral { background-color: #8b5cf6; }
+.type-behavioral { background-color: #6b7280; }
 
 /* Responsive design */
 @media (max-width: 768px) {

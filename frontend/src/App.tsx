@@ -6,11 +6,13 @@ import Dashboard from './pages/Dashboard';
 import Questions from './pages/Questions';
 import Generate from './pages/Generate';
 import Stats from './pages/Stats';
+// Import JSX from react to fix the JSX IntrinsicElements issue
+import { JSX } from 'react';
 
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
         <Header />
         <main className="container mx-auto px-4 py-8 max-w-7xl">
           <Routes>

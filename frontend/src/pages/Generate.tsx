@@ -117,7 +117,7 @@ const Generate: React.FC = () => {
       >
         <div className="inline-flex items-center space-x-3 mb-6">
           <motion.div 
-            className="p-4 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl shadow-strong"
+            className="p-4 bg-gradient-to-br from-gray-700 to-gray-800 rounded-2xl shadow-strong"
             whileHover={{ scale: 1.05, rotate: 5 }}
           >
             <Wand2 className="w-8 h-8 text-white" />
@@ -148,7 +148,7 @@ const Generate: React.FC = () => {
                 value={formData.job_title}
                 onChange={handleInputChange}
                 placeholder="e.g., Software Engineer, Data Scientist, Product Manager"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
                 required
               />
             </div>
@@ -161,7 +161,7 @@ const Generate: React.FC = () => {
                 name="count"
                 value={formData.count}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
               >
                 <option value={3}>3 Questions</option>
                 <option value={5}>5 Questions</option>
@@ -200,7 +200,7 @@ const Generate: React.FC = () => {
                   key={option.value}
                   className={`relative p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
                     formData.question_type === option.value
-                      ? 'border-purple-500 bg-gradient-to-br from-purple-50 to-blue-50 shadow-medium'
+                      ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-slate-50 shadow-medium'
                       : 'border-gray-200 hover:border-gray-300 hover:shadow-soft'
                   }`}
                   whileHover={{ scale: 1.02 }}
@@ -225,7 +225,7 @@ const Generate: React.FC = () => {
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                     >
-                      <CheckCircle className="w-5 h-5 text-purple-600" />
+                      <CheckCircle className="w-5 h-5 text-gray-700" />
                     </motion.div>
                   )}
                 </motion.label>
@@ -247,7 +247,7 @@ const Generate: React.FC = () => {
           <motion.button
             type="submit"
             disabled={loading || !formData.job_title}
-            className="w-full flex items-center justify-center space-x-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-semibold shadow-strong hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
+            className="w-full flex items-center justify-center space-x-3 px-8 py-4 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-xl font-semibold shadow-strong hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
             whileHover={{ scale: loading ? 1 : 1.02 }}
             whileTap={{ scale: loading ? 1 : 0.98 }}
           >

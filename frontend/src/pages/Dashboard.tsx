@@ -39,7 +39,7 @@ const Dashboard: React.FC = () => {
       2: 'bg-primary-100 text-primary-800',
       3: 'bg-warning-100 text-warning-800',
       4: 'bg-error-100 text-error-800',
-      5: 'bg-purple-100 text-purple-800',
+      5: 'bg-gray-100 text-gray-800',
     };
     return colors[difficulty as keyof typeof colors] || colors[3];
   };
@@ -47,7 +47,7 @@ const Dashboard: React.FC = () => {
   const getTypeColor = (type: string): string => {
     return type === 'technical' 
       ? 'bg-blue-100 text-blue-800'
-      : 'bg-purple-100 text-purple-800';
+      : 'bg-gray-100 text-gray-800';
   };
 
   if (loading) {
@@ -73,7 +73,7 @@ const Dashboard: React.FC = () => {
           animate={{ scale: 1 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <div className="p-4 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl shadow-strong">
+          <div className="p-4 bg-gradient-to-br from-gray-700 to-gray-800 rounded-2xl shadow-strong">
             <Sparkles className="w-8 h-8 text-white" />
           </div>
         </motion.div>
@@ -85,7 +85,7 @@ const Dashboard: React.FC = () => {
           transition={{ duration: 0.6, delay: 0.3 }}
         >
           Welcome to{' '}
-          <span className="bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-gray-700 via-gray-800 to-gray-700 bg-clip-text text-transparent">
             InterviewPrep
           </span>
         </motion.h1>
@@ -114,8 +114,8 @@ const Dashboard: React.FC = () => {
             title: 'Generate Questions',
             description: 'Create AI-powered interview questions',
             icon: Plus,
-            gradient: 'from-purple-500 to-blue-600',
-            hoverColor: 'hover:border-purple-300',
+            gradient: 'from-gray-600 to-gray-700',
+            hoverColor: 'hover:border-gray-300',
           },
           {
             to: '/questions',
@@ -153,13 +153,13 @@ const Dashboard: React.FC = () => {
                     <action.icon className="w-6 h-6 text-white" />
                   </motion.div>
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-purple-700 transition-colors duration-200">
+                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-gray-600 transition-colors duration-200">
                       {action.title}
                     </h3>
                     <p className="text-gray-600">{action.description}</p>
                   </div>
                 </div>
-                <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-purple-600 group-hover:translate-x-1 transition-all duration-200" />
+                <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 group-hover:translate-x-1 transition-all duration-200" />
               </div>
             </Link>
           </motion.div>
@@ -203,7 +203,7 @@ const Dashboard: React.FC = () => {
             value={stats.total_question_sets}
             subtitle="Collections created"
             icon={Users}
-            color="purple"
+            color="gray"
             index={3}
           />
         </motion.div>
@@ -223,7 +223,7 @@ const Dashboard: React.FC = () => {
           </div>
           <Link
             to="/questions"
-            className="inline-flex items-center space-x-2 text-purple-600 hover:text-purple-700 font-medium transition-colors duration-200 group"
+            className="inline-flex items-center space-x-2 text-gray-700 hover:text-gray-900 font-medium transition-colors duration-200 group"
           >
             <span>View all</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
@@ -245,7 +245,7 @@ const Dashboard: React.FC = () => {
               <p className="text-gray-600 mb-6">Generate your first set of interview questions to get started</p>
               <Link
                 to="/generate"
-                className="inline-flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:shadow-strong transition-all duration-300 font-medium"
+                className="inline-flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-xl hover:shadow-strong transition-all duration-300 font-medium"
               >
                 <Plus className="w-4 h-4" />
                 <span>Generate Questions</span>
