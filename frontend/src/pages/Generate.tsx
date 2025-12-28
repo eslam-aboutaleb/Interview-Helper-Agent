@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Brain, Wand2, CheckCircle, AlertCircle } from 'lucide-react';
-import { questionsApi } from '../services/api';
+import { questionsApi, parseAxiosError } from '../services/api';
 import { Question, QuestionGenerateRequest } from '../types';
+import { ErrorResponse, ErrorType } from '../services/errorHandler';
 import QuestionCard from '../components/QuestionCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Alert from '../components/Alert';
+import EmptyState from '../components/EmptyState';
 import toast from 'react-hot-toast';
 
 const Generate: React.FC = () => {
@@ -15,22 +18,52 @@ const Generate: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ErrorResponse | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    
+    if (!formData.job_title.trim()) {
+      errors.job_title = 'Job title is required';
+    } else if (formData.job_title.length < 2) {
+      errors.job_title = 'Job title must be at least 2 characters';
+    } else if (formData.job_title.length > 100) {
+      errors.job_title = 'Job title cannot exceed 100 characters';
+    }
+    
+    if (formData.count < 1 || formData.count > 100) {
+      errors.count = 'Number of questions must be between 1 and 100';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) {
+      toast.error('Please fix the validation errors');
+      return;
+    }
+    
     setLoading(true);
-    setError('');
+    setError(null);
+    setGeneratedQuestions([]);
     
     try {
       const response = await questionsApi.generate(formData);
       setGeneratedQuestions(response.data);
-      toast.success(`Generated ${response.data.length} questions successfully!`);
-    } catch (error) {
-      const errorMessage = 'Failed to generate questions. Please try again.';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      console.error('Generation failed:', error);
+      if (response.data.length === 0) {
+        toast.warning('No questions were generated. Please try again.');
+      } else {
+        toast.success(`Generated ${response.data.length} questions successfully!`);
+      }
+    } catch (err) {
+      const parsedError = parseAxiosError(err);
+      setError(parsedError);
+      console.error('Generation failed:', parsedError);
     } finally {
       setLoading(false);
     }
@@ -42,6 +75,11 @@ const Generate: React.FC = () => {
       ...prev,
       [name]: name === 'count' ? parseInt(value) : value
     }));
+    // Clear validation error for this field
+    setValidationErrors(prev => ({
+      ...prev,
+      [name]: ''
+    }));
   };
 
   const handleQuestionTypeChange = (type: 'mixed' | 'technical' | 'behavioral') => {
@@ -51,7 +89,10 @@ const Generate: React.FC = () => {
   const toggleFlag = async (questionId: number) => {
     try {
       const question = generatedQuestions.find(q => q.id === questionId);
-      if (!question) return;
+      if (!question) {
+        toast.error('Question not found');
+        return;
+      }
 
       await questionsApi.update(questionId, {
         is_flagged: !question.is_flagged
@@ -66,9 +107,10 @@ const Generate: React.FC = () => {
       );
       
       toast.success(question.is_flagged ? 'Question unflagged' : 'Question flagged');
-    } catch (error) {
-      toast.error('Failed to update question');
-      console.error('Failed to toggle flag:', error);
+    } catch (err) {
+      const parsedError = parseAxiosError(err);
+      toast.error(`Failed to update question: ${parsedError.message}`);
+      console.error('Failed to toggle flag:', parsedError);
     }
   };
 
@@ -86,28 +128,48 @@ const Generate: React.FC = () => {
         )
       );
       
-      toast.success('Difficulty updated');
-    } catch (error) {
-      toast.error('Failed to update difficulty');
-      console.error('Failed to update difficulty:', error);
+      toast.success('Difficulty updated successfully');
+    } catch (err) {
+      const parsedError = parseAxiosError(err);
+      toast.error(`Failed to update difficulty: ${parsedError.message}`);
+      console.error('Failed to update difficulty:', parsedError);
     }
   };
 
   const deleteQuestion = async (questionId: number) => {
-    if (!window.confirm('Are you sure you want to delete this question?')) return;
+    if (!window.confirm('Are you sure you want to delete this question? This action cannot be undone.')) {
+      return;
+    }
     
     try {
       await questionsApi.delete(questionId);
       setGeneratedQuestions(prev => prev.filter(q => q.id !== questionId));
-      toast.success('Question deleted');
-    } catch (error) {
-      toast.error('Failed to delete question');
-      console.error('Failed to delete question:', error);
+      toast.success('Question deleted successfully');
+    } catch (err) {
+      const parsedError = parseAxiosError(err);
+      toast.error(`Failed to delete question: ${parsedError.message}`);
+      console.error('Failed to delete question:', parsedError);
     }
   };
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      {/* Error Alert */}
+      {error && (
+        <Alert
+          type="error"
+          title="Generation Failed"
+          message={error.message}
+          details={error.details}
+          actionLabel="Try Again"
+          onAction={() => {
+            setError(null);
+            setGeneratedQuestions([]);
+          }}
+          onDismiss={() => setError(null)}
+        />
+      )}
+
       {/* Header */}
       <motion.div 
         className="text-center"
@@ -148,9 +210,16 @@ const Generate: React.FC = () => {
                 value={formData.job_title}
                 onChange={handleInputChange}
                 placeholder="e.g., Software Engineer, Data Scientist, Product Manager"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
-                required
+                aria-label="Job title for generating questions"
+                className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white ${
+                  validationErrors.job_title 
+                    ? 'border-error-300 focus:ring-error-500' 
+                    : 'border-gray-300 focus:ring-blue-500'
+                }`}
               />
+              {validationErrors.job_title && (
+                <p className="text-error-600 text-sm mt-2">{validationErrors.job_title}</p>
+              )}
             </div>
 
             <div>
@@ -161,13 +230,21 @@ const Generate: React.FC = () => {
                 name="count"
                 value={formData.count}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
+                aria-label="Number of questions to generate"
+                className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white ${
+                  validationErrors.count 
+                    ? 'border-error-300 focus:ring-error-500' 
+                    : 'border-gray-300 focus:ring-blue-500'
+                }`}
               >
                 <option value={3}>3 Questions</option>
                 <option value={5}>5 Questions</option>
                 <option value={10}>10 Questions</option>
                 <option value={15}>15 Questions</option>
               </select>
+              {validationErrors.count && (
+                <p className="text-error-600 text-sm mt-2">{validationErrors.count}</p>
+              )}
             </div>
           </div>
 

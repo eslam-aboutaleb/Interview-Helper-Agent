@@ -206,7 +206,7 @@ The application uses Docker Compose for easy development and deployment:
 - `DATABASE_URL`: PostgreSQL connection string
 - `REACT_APP_API_URL`: Backend API URL for frontend
 
-## 📊 Usage Examples
+## Usage Examples
 
 ### Generating Questions
 ```bash

@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { MessageSquare, Plus, BarChart3, TrendingUp, Users, Flag, Sparkles, ArrowRight } from 'lucide-react';
-import { questionsApi, statsApi } from '../services/api';
+import { questionsApi, statsApi, parseAxiosError } from '../services/api';
 import { Question, Stats } from '../types';
+import { ErrorResponse, ErrorType } from '../services/errorHandler';
 import StatCard from '../components/StatCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Alert from '../components/Alert';
 import toast from 'react-hot-toast';
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentQuestions, setRecentQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<ErrorResponse | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -19,15 +22,18 @@ const Dashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
+      setLoading(true);
+      setError(null);
       const [statsRes, questionsRes] = await Promise.all([
         statsApi.get(),
         questionsApi.getAll({ limit: 5 })
       ]);
       setStats(statsRes.data);
       setRecentQuestions(questionsRes.data);
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-      toast.error('Failed to load dashboard data');
+    } catch (err) {
+      const parsedError = parseAxiosError(err);
+      setError(parsedError);
+      console.error('Failed to fetch dashboard data:', parsedError);
     } finally {
       setLoading(false);
     }
@@ -60,6 +66,18 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* Error Alert */}
+      {error && (
+        <Alert
+          type="error"
+          title="Failed to Load Dashboard"
+          message={error.message}
+          details={error.details}
+          actionLabel="Retry"
+          onAction={fetchDashboardData}
+          onDismiss={() => setError(null)}
+        />
+      )}
       {/* Hero Section */}
       <motion.div 
         className="text-center py-16"

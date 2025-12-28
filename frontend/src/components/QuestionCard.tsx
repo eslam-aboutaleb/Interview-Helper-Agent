@@ -1,10 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Flag, Trash2, Calendar, Tag } from 'lucide-react';
+import { Flag, Trash2, Calendar, Tag, Loader } from 'lucide-react';
 import { Question } from '../types';
 
 interface QuestionCardProps {
   question: Question;
+  isLoading?: boolean;
   onToggleFlag: (id: number) => void;
   onUpdateDifficulty: (id: number, difficulty: number) => void;
   onDelete: (id: number) => void;
@@ -13,6 +14,7 @@ interface QuestionCardProps {
 
 const QuestionCard: React.FC<QuestionCardProps> = ({
   question,
+  isLoading = false,
   onToggleFlag,
   onUpdateDifficulty,
   onDelete,
@@ -94,7 +96,9 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
           <select
             value={question.difficulty}
             onChange={(e) => onUpdateDifficulty(question.id, parseInt(e.target.value))}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+            disabled={isLoading}
+            aria-label={`Set difficulty for question ${question.id}`}
+            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {[1, 2, 3, 4, 5].map(level => (
               <option key={level} value={level}>Level {level}</option>
@@ -104,24 +108,36 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
           <div className="flex space-x-2">
             <motion.button
               onClick={() => onToggleFlag(question.id)}
-              className={`p-2 rounded-lg transition-all duration-200 ${
+              disabled={isLoading}
+              aria-label={question.is_flagged ? 'Unflag question' : 'Flag question'}
+              className={`p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
                 question.is_flagged
                   ? 'bg-warning-100 text-warning-600 border border-warning-200'
                   : 'bg-gray-100 text-gray-600 hover:bg-warning-100 hover:text-warning-600 border border-gray-200'
-              }`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
+              whileHover={!isLoading ? { scale: 1.05 } : undefined}
+              whileTap={!isLoading ? { scale: 0.95 } : undefined}
             >
-              <Flag className="w-4 h-4" />
+              {isLoading ? (
+                <Loader className="w-4 h-4 animate-spin" />
+              ) : (
+                <Flag className="w-4 h-4" />
+              )}
             </motion.button>
 
             <motion.button
               onClick={() => onDelete(question.id)}
-              className="p-2 bg-gray-100 text-gray-600 hover:bg-error-100 hover:text-error-600 rounded-lg transition-all duration-200 border border-gray-200"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              disabled={isLoading}
+              aria-label="Delete question"
+              className={`p-2 bg-gray-100 text-gray-600 hover:bg-error-100 hover:text-error-600 rounded-lg transition-all duration-200 border border-gray-200 flex items-center justify-center ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
+              whileHover={!isLoading ? { scale: 1.05 } : undefined}
+              whileTap={!isLoading ? { scale: 0.95 } : undefined}
             >
-              <Trash2 className="w-4 h-4" />
+              {isLoading ? (
+                <Loader className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
             </motion.button>
           </div>
         </div>

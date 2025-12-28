@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, PieChart, TrendingUp, Users, MessageSquare, Flag, Target, Award } from 'lucide-react';
-import { statsApi } from '../services/api';
+import { BarChart3, PieChart, TrendingUp, Users, MessageSquare, Flag, Target, Award, RefreshCw } from 'lucide-react';
+import { statsApi, parseAxiosError } from '../services/api';
 import { Stats } from '../types';
+import { ErrorResponse, ErrorType } from '../services/errorHandler';
 import StatCard from '../components/StatCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Alert from '../components/Alert';
+import EmptyState from '../components/EmptyState';
 import toast from 'react-hot-toast';
 
 const StatsPage: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<ErrorResponse | null>(null);
 
   useEffect(() => {
     fetchStats();
@@ -17,11 +21,14 @@ const StatsPage: React.FC = () => {
 
   const fetchStats = async () => {
     try {
+      setLoading(true);
+      setError(null);
       const response = await statsApi.get();
       setStats(response.data);
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-      toast.error('Failed to load statistics');
+    } catch (err) {
+      const parsedError = parseAxiosError(err);
+      setError(parsedError);
+      console.error('Failed to fetch stats:', parsedError);
     } finally {
       setLoading(false);
     }
@@ -35,11 +42,31 @@ const StatsPage: React.FC = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <Alert
+          type="error"
+          title="Failed to Load Statistics"
+          message={error.message}
+          details={error.details}
+          actionLabel="Retry"
+          onAction={fetchStats}
+          onDismiss={() => setError(null)}
+        />
+      </div>
+    );
+  }
+
   if (!stats) {
     return (
-      <div className="text-center py-12">
-        <p className="text-gray-600">Failed to load statistics.</p>
-      </div>
+      <EmptyState
+        title="No statistics available"
+        message="Start generating and rating questions to see your statistics."
+        icon={<BarChart3 className="w-12 h-12 text-gray-400" />}
+        actionLabel="Generate Questions"
+        onAction={() => window.location.href = '/generate'}
+      />
     );
   }
 
