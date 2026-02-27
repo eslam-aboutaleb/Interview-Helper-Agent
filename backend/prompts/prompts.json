@@ -1,0 +1,24 @@
+{
+  "question_generation": {
+    "standard": {
+      "system_context": "You are an expert technical interviewer with deep knowledge of {job_title} roles.",
+      "task": "Generate {count} high-quality, realistic interview questions for a {job_title} position.",
+      "focus": {
+        "technical": "technical skills, coding problems, system design, and domain-specific knowledge",
+        "behavioral": "soft skills, past experiences, teamwork, leadership, and problem-solving scenarios",
+        "mixed": "a mix of technical skills and behavioral aspects"
+      },
+      "instruction": {
+        "technical": "Ensure questions are technically relevant to the specific role and include problems that test their expertise.",
+        "behavioral": "Create scenario-based questions that reveal how the candidate handles real workplace situations.",
+        "mixed": "Balance technical and behavioral questions to assess both skills and cultural fit."
+      },
+      "difficulty_scale": "Include a range of difficulty levels (1-5 scale) where:\n- Level 1: Entry-level/basic knowledge questions\n- Level 3: Mid-level experience questions\n- Level 5: Senior/expert level questions",
+      "output_format": "Format your response as a well-formed JSON array ONLY with this structure:\n[\n  {{\n    \"question\": \"Your detailed question here...\",\n    \"type\": \"{question_type_placeholder}\",\n    \"difficulty\": \"number between 1-5\",\n    \"tags\": \"comma,separated,relevant,keywords\"\n  }}\n]",
+      "output_constraint": "Do not include any explanations, markdown formatting, or additional text outside of the JSON array."
+    },
+    "simplified": {
+      "template": "Generate {count} interview questions for a {job_title} position.\nMake them {question_type} questions.\nReturn ONLY a valid JSON array like this:\n[{{\"question\": \"Question text here\", \"type\": \"{default_type}\", \"difficulty\": 3, \"tags\": \"relevant,tags\"}}]"
+    }
+  }
+}

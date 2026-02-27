@@ -15,23 +15,48 @@ from schemas import (
     UserRatingCreate, UserRating as UserRatingSchema
 )
 # Import AI service for question generation
-from services.gemini_service import GeminiService
+from services.gemini_service import GeminiService, GeminiServiceError
 
 # Initialize FastAPI router for question-related endpoints
 router = APIRouter()
-# Initialize Gemini AI service
-gemini_service = GeminiService()
+
+# ---------------------------------------------------------------------------
+# Dependency: AI service (created once per process via FastAPI DI)
+# ---------------------------------------------------------------------------
+
+_gemini_service: Optional[GeminiService] = None
+
+
+def get_gemini_service() -> GeminiService:
+    """FastAPI dependency that returns a shared GeminiService instance.
+
+    The service is initialised lazily on first request so that startup
+    failures (e.g. missing API key) surface as HTTP 503 errors rather
+    than crashing the whole process.
+    """
+    global _gemini_service
+    if _gemini_service is None:
+        try:
+            _gemini_service = GeminiService()
+        except GeminiServiceError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"AI service unavailable: {exc}",
+            ) from exc
+    return _gemini_service
 
 @router.post("/generate", response_model=List[QuestionSchema], status_code=status.HTTP_201_CREATED)
 async def generate_questions(
     request: QuestionGenerateRequest = Field(..., description="Question generation parameters including job title, count, and type"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    gemini_service: GeminiService = Depends(get_gemini_service),
 ):
     """Generate new interview questions using AI
     
     Args:
         request: Contains job_title, count, and question_type for generation
         db: Database session dependency
+        gemini_service: AI service dependency (injected via factory)
         
     Returns:
         List of generated Question objects saved to database

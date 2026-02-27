@@ -1,35 +1,81 @@
-import os
+"""
+Gemini Service module.
+
+Provides AI-powered interview question generation backed by Google Gemini.
+Prompts are loaded from ``backend/prompts/prompts.json`` so they can be
+edited without touching Python code.  LLM instantiation is delegated to
+:class:`~services.agent_factory.AgentFactory` (Factory design pattern).
+"""
+
 import json
 import logging
-from typing import List, Dict, Optional
+import os
+from pathlib import Path
+from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
-
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage
-from langchain.callbacks.manager import CallbackManager
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from services.agent_factory import AgentFactory, AgentProvider, BaseAgent
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+# ---------------------------------------------------------------------------
+# Prompt loader
+# ---------------------------------------------------------------------------
+
+_PROMPTS_PATH = Path(__file__).parent.parent / "prompts" / "prompts.json"
+
+
+def _load_prompts() -> dict:
+    """Load and return the prompts dictionary from the JSON file.
+
+    Raises:
+        FileNotFoundError: If the prompts file does not exist.
+        json.JSONDecodeError: If the file contains invalid JSON.
+    """
+    with _PROMPTS_PATH.open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+# Cache prompts at module level (reload on import)
+_PROMPTS: dict = _load_prompts()
+
+
+# ---------------------------------------------------------------------------
+# Custom exception
+# ---------------------------------------------------------------------------
+
 
 class GeminiServiceError(Exception):
-    """Custom exception for Gemini service errors"""
-    pass
+    """Custom exception for Gemini service errors."""
+
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
 
 
 class GeminiService:
-    """Service for generating interview questions using Google's Gemini API via LangChain.
-    
-    This service provides AI-powered question generation with fallback mechanisms
-    and multiple parsing strategies for robustness.
+    """Service for generating interview questions using Google Gemini via LangChain.
+
+    Prompts are loaded from ``prompts/prompts.json``.
+    LLM instances are created through :class:`AgentFactory` (Factory pattern).
+
+    This service provides AI-powered question generation with fallback
+    mechanisms and multiple parsing strategies for robustness.
     """
-    
-    # Cache for LLM initialization
-    _llm = None
-    
+
     # Constants for configuration
     MAX_GENERATION_ATTEMPTS = 2
     DEFAULT_TEMPERATURE = 0.7
@@ -39,707 +85,630 @@ class GeminiService:
     DEFAULT_DIFFICULTY = 3
     MIN_DIFFICULTY = 1
     MAX_DIFFICULTY = 5
-    VALID_QUESTION_TYPES = {'technical', 'behavioral', 'mixed'}
-    MODEL_NAMES = ['gemini-1.5-pro', 'gemini-pro']
-    
-    def __init__(self):
-        """Initialize Gemini service and validate the API key (lazy LLM loading).
-        
+    VALID_QUESTION_TYPES = {"technical", "behavioral", "mixed"}
+
+    def __init__(self) -> None:
+        """Validate the API key.  LLM creation is deferred to call time.
+
         Raises:
-            GeminiServiceError: If API key is not properly configured
+            GeminiServiceError: If the API key is missing or a placeholder.
         """
         try:
             api_key = os.getenv("GEMINI_API_KEY")
             if not api_key or api_key == "your-gemini-api-key":
-                error_msg = "GEMINI_API_KEY environment variable not set or using placeholder value"
-                logger.warning(error_msg)
-                raise GeminiServiceError(error_msg)
-            
+                msg = (
+                    "GEMINI_API_KEY environment variable not set "
+                    "or using placeholder value"
+                )
+                logger.warning(msg)
+                raise GeminiServiceError(msg)
+
             self._api_key = api_key
             logger.info("Gemini API key validated successfully")
-        
+
         except GeminiServiceError:
             raise
-        except Exception as e:
-            raise GeminiServiceError(f"Failed to initialize Gemini service: {str(e)}")
-    
-    def _get_llm(self, temperature: float = DEFAULT_TEMPERATURE) -> ChatGoogleGenerativeAI:
-        """Create a LangChain ChatGoogleGenerativeAI LLM instance.
-        
-        Tries multiple model names with fallback mechanism.
-        
+        except Exception as exc:
+            raise GeminiServiceError(
+                f"Failed to initialise Gemini service: {exc}"
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Agent creation via factory
+    # ------------------------------------------------------------------
+
+    def _get_agent(self, temperature: float = DEFAULT_TEMPERATURE) -> BaseAgent:
+        """Create a :class:`BaseAgent` via :class:`AgentFactory`.
+
         Args:
-            temperature: Sampling temperature for generation
-            
+            temperature: Sampling temperature for generation.
+
         Returns:
-            ChatGoogleGenerativeAI: Initialized LangChain LLM
-            
+            A fully initialised :class:`BaseAgent`.
+
         Raises:
-            GeminiServiceError: If all model initialization attempts fail
+            GeminiServiceError: If the factory cannot create an agent.
         """
-        last_error = None
-        for model_name in self.MODEL_NAMES:
-            try:
-                llm = ChatGoogleGenerativeAI(
-                    model=model_name,
-                    google_api_key=self._api_key,
-                    temperature=temperature,
-                    top_p=0.95,
-                    top_k=40,
-                    max_output_tokens=4096,
-                    convert_system_message_to_human=True,
-                )
-                logger.info(f"Successfully initialized LangChain LLM with model {model_name}")
-                return llm
-            
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Failed to initialize LangChain LLM with {model_name}: {str(e)}")
-                continue
-        
-        # All attempts failed
-        raise GeminiServiceError(
-            f"Failed to initialize any Gemini model via LangChain. Last error: {str(last_error)}"
-        )
+        try:
+            return AgentFactory.create(
+                provider=AgentProvider.GEMINI,
+                api_key=self._api_key,
+                temperature=temperature,
+            )
+        except Exception as exc:
+            raise GeminiServiceError(
+                f"AgentFactory failed to create agent: {exc}"
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def generate_questions(
         self,
         job_title: str,
         count: int = DEFAULT_COUNT,
-        question_type: str = "mixed"
+        question_type: str = "mixed",
     ) -> List[Dict]:
         """Generate interview questions using Gemini AI via LangChain.
-        
-        Uses a multi-attempt strategy with fallback to simplified prompts if needed.
-        
+
+        Uses a multi-attempt strategy with fallback to simplified prompts
+        if needed.
+
         Args:
-            job_title: The position title to generate questions for
-            count: Number of questions to generate (default: 5, max: 100)
-            question_type: Type of questions - 'technical', 'behavioral', or 'mixed'
-            
+            job_title: The position title to generate questions for.
+            count: Number of questions to generate (default: 5, max: 100).
+            question_type: Type of questions – ``'technical'``,
+                ``'behavioral'``, or ``'mixed'``.
+
         Returns:
-            List of question dictionaries with formatted fields
-            
+            List of question dictionaries with formatted fields.
+
         Raises:
-            GeminiServiceError: If generation fails or invalid parameters
+            GeminiServiceError: If generation fails or parameters are invalid.
         """
         try:
-            # Validate inputs
             self._validate_generation_params(job_title, count, question_type)
-            
-            logger.info(f"Generating {count} {question_type} questions for {job_title}")
-            
+
+            logger.info(
+                "Generating %d %s questions for '%s'",
+                count,
+                question_type,
+                job_title,
+            )
+
             # First attempt with standard prompt
             questions = self._attempt_question_generation(
                 job_title, count, question_type, is_simplified=False
             )
-            
-            # If we didn't get enough questions, try with simplified prompt
+
+            # If we didn't get enough, try with simplified prompt
             remaining = count - len(questions)
             if remaining > 0:
-                logger.info(f"First attempt yielded {len(questions)}/{count} questions. Trying simplified prompt.")
-                additional_questions = self._attempt_question_generation(
+                logger.info(
+                    "First attempt yielded %d/%d questions. Trying simplified prompt.",
+                    len(questions),
+                    count,
+                )
+                additional = self._attempt_question_generation(
                     job_title, remaining, question_type, is_simplified=True
                 )
-                questions.extend(additional_questions)
-            
-            # Return questions, limited to requested count
+                questions.extend(additional)
+
             if questions:
-                logger.info(f"Successfully generated {len(questions)} questions")
+                logger.info("Successfully generated %d questions", len(questions))
                 return questions[:count]
-            else:
-                raise GeminiServiceError(
-                    f"Failed to generate any valid questions for {job_title}"
-                )
-        
+
+            raise GeminiServiceError(
+                f"Failed to generate any valid questions for '{job_title}'"
+            )
+
         except GeminiServiceError:
             raise
-        except Exception as e:
-            logger.error(f"Error generating questions: {str(e)}")
-            raise GeminiServiceError(f"Failed to generate questions: {str(e)}")
-    
+        except Exception as exc:
+            logger.error("Error generating questions: %s", exc)
+            raise GeminiServiceError(f"Failed to generate questions: {exc}") from exc
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
     def _validate_generation_params(
         self,
         job_title: str,
         count: int,
-        question_type: str
+        question_type: str,
     ) -> None:
         """Validate generation parameters.
-        
-        Args:
-            job_title: The position title
-            count: Number of questions to generate
-            question_type: Type of questions
-            
+
         Raises:
-            GeminiServiceError: If any parameter is invalid
+            GeminiServiceError: If any parameter is invalid.
         """
         if not job_title or not isinstance(job_title, str) or not job_title.strip():
             raise GeminiServiceError("job_title must be a non-empty string")
-        
+
         if not isinstance(count, int) or count < 1 or count > self.MAX_COUNT:
-            raise GeminiServiceError(f"count must be between 1 and {self.MAX_COUNT}")
-        
+            raise GeminiServiceError(
+                f"count must be between 1 and {self.MAX_COUNT}"
+            )
+
         if question_type not in self.VALID_QUESTION_TYPES:
             raise GeminiServiceError(
                 f"question_type must be one of {self.VALID_QUESTION_TYPES}"
             )
-            
+
+    # ------------------------------------------------------------------
+    # Generation attempts
+    # ------------------------------------------------------------------
+
     def _attempt_question_generation(
         self,
         job_title: str,
         count: int,
         question_type: str,
         is_simplified: bool = False,
-        max_attempts: int = None
+        max_attempts: Optional[int] = None,
     ) -> List[Dict]:
         """Make multiple attempts to generate questions with adaptive temperature.
-        
+
         Args:
-            job_title: The position title
-            count: Number of questions needed
-            question_type: Type of questions
-            is_simplified: Whether to use simplified prompt
-            max_attempts: Maximum number of generation attempts
-            
+            job_title: The position title.
+            count: Number of questions needed.
+            question_type: Type of questions.
+            is_simplified: Whether to use the simplified prompt.
+            max_attempts: Maximum number of generation attempts.
+
         Returns:
-            List of generated question dictionaries
+            List of generated question dictionaries.
         """
         if max_attempts is None:
             max_attempts = self.MAX_GENERATION_ATTEMPTS
-        
-        questions = []
-        
+
+        questions: List[Dict] = []
+
         for attempt in range(1, max_attempts + 1):
             try:
-                # Build appropriate prompt
-                if is_simplified:
-                    prompt = self._build_simplified_prompt(job_title, count, question_type)
-                else:
-                    prompt = self._build_prompt(job_title, count, question_type)
-                
+                prompt = (
+                    self._build_simplified_prompt(job_title, count, question_type)
+                    if is_simplified
+                    else self._build_prompt(job_title, count, question_type)
+                )
+
                 # Reduce temperature on retry for more deterministic results
-                temperature = self.RETRY_TEMPERATURE if attempt > 1 else self.DEFAULT_TEMPERATURE
-                
-                logger.info(f"Attempt {attempt}/{max_attempts} with temperature={temperature}")
-                
-                # Get LLM with appropriate temperature
-                llm = self._get_llm(temperature=temperature)
-                
-                # Generate content via LangChain
-                message = HumanMessage(content=prompt)
-                response = llm.invoke([message])
-                
-                response_text = response.content if hasattr(response, 'content') else str(response)
-                
+                temperature = (
+                    self.RETRY_TEMPERATURE if attempt > 1 else self.DEFAULT_TEMPERATURE
+                )
+
+                logger.info(
+                    "Attempt %d/%d with temperature=%.2f",
+                    attempt,
+                    max_attempts,
+                    temperature,
+                )
+
+                agent = self._get_agent(temperature=temperature)
+                response = agent.invoke([HumanMessage(content=prompt)])
+
+                response_text = (
+                    response.content
+                    if hasattr(response, "content")
+                    else str(response)
+                )
+
                 if not response_text or not response_text.strip():
-                    logger.warning(f"Attempt {attempt}: Empty response from model")
+                    logger.warning("Attempt %d: empty response from model", attempt)
                     continue
-                
-                # Parse response
-                new_questions = self._parse_response(response_text, job_title, question_type)
+
+                new_questions = self._parse_response(
+                    response_text, job_title, question_type
+                )
                 questions.extend(new_questions)
-                
-                # If we got enough questions, break early
+
                 if len(questions) >= count:
                     break
-            
-            except Exception as e:
-                logger.warning(f"Attempt {attempt} error: {str(e)}")
+
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Attempt %d error: %s", attempt, exc)
                 if attempt == max_attempts:
-                    logger.error(f"All {max_attempts} attempts failed for {job_title}")
-        
+                    logger.error(
+                        "All %d attempts failed for '%s'", max_attempts, job_title
+                    )
+
         return questions
 
-    def _build_simplified_prompt(self, job_title: str, count: int, question_type: str) -> str:
-        """Build a simplified prompt for Gemini AI when standard prompt fails.
-        
+    # ------------------------------------------------------------------
+    # Prompt builders (load from JSON)
+    # ------------------------------------------------------------------
+
+    def _build_prompt(
+        self, job_title: str, count: int, question_type: str
+    ) -> str:
+        """Build the standard prompt from the JSON template.
+
         Args:
-            job_title: The position title
-            count: Number of questions to generate
-            question_type: Type of questions
-            
+            job_title: The position title.
+            count: Number of questions to generate.
+            question_type: Type of questions.
+
         Returns:
-            Simplified prompt string
+            Rendered prompt string.
         """
-        return f"""
-Generate {count} interview questions for a {job_title} position.
-Make them {question_type} questions.
-Return ONLY a valid JSON array like this:
-[{{"question": "Question text here", "type": "{question_type if question_type != 'mixed' else 'technical'}", "difficulty": 3, "tags": "relevant,tags"}}]
-"""
-        
-    def _build_prompt(self, job_title: str, count: int, question_type: str) -> str:
-        """Build standard prompt for Gemini AI.
-        
+        cfg = _PROMPTS["question_generation"]["standard"]
+
+        focus = cfg["focus"][question_type]
+        instruction = cfg["instruction"][question_type]
+        difficulty_scale = cfg["difficulty_scale"]
+        output_format = cfg["output_format"]
+        output_constraint = cfg["output_constraint"]
+
+        type_placeholder = (
+            question_type if question_type != "mixed" else "technical or behavioral"
+        )
+
+        return (
+            f"{cfg['system_context'].format(job_title=job_title)}\n\n"
+            f"Task: {cfg['task'].format(count=count, job_title=job_title)}\n"
+            f"Focus on {focus}.\n\n"
+            f"{instruction}\n\n"
+            f"{difficulty_scale}\n\n"
+            f"{output_format.format(question_type_placeholder=type_placeholder)}\n\n"
+            f"{output_constraint}"
+        )
+
+    def _build_simplified_prompt(
+        self, job_title: str, count: int, question_type: str
+    ) -> str:
+        """Build the simplified prompt from the JSON template.
+
         Args:
-            job_title: The position title
-            count: Number of questions to generate
-            question_type: Type of questions
-            
+            job_title: The position title.
+            count: Number of questions to generate.
+            question_type: Type of questions.
+
         Returns:
-            Detailed prompt string
+            Rendered simplified prompt string.
         """
-        if question_type == "technical":
-            focus = "technical skills, coding problems, system design, and domain-specific knowledge"
-            instruction = "Ensure questions are technically relevant to the specific role and include problems that test their expertise."
-        elif question_type == "behavioral":
-            focus = "soft skills, past experiences, teamwork, leadership, and problem-solving scenarios"
-            instruction = "Create scenario-based questions that reveal how the candidate handles real workplace situations."
-        else:
-            focus = "a mix of technical skills and behavioral aspects"
-            instruction = "Balance technical and behavioral questions to assess both skills and cultural fit."
+        cfg = _PROMPTS["question_generation"]["simplified"]
+        default_type = question_type if question_type != "mixed" else "technical"
+        return cfg["template"].format(
+            count=count,
+            job_title=job_title,
+            question_type=question_type,
+            default_type=default_type,
+        )
 
-        return f"""
-You are an expert technical interviewer with deep knowledge of {job_title} roles.
-
-Task: Generate {count} high-quality, realistic interview questions for a {job_title} position.
-Focus on {focus}.
-
-{instruction}
-
-Include a range of difficulty levels (1-5 scale) where:
-- Level 1: Entry-level/basic knowledge questions
-- Level 3: Mid-level experience questions 
-- Level 5: Senior/expert level questions
-
-Format your response as a well-formed JSON array ONLY with this structure:
-[
-  {{
-    "question": "Your detailed question here...",
-    "type": "{question_type if question_type != 'mixed' else 'technical or behavioral'}",
-    "difficulty": number between 1-5,
-    "tags": "comma,separated,relevant,keywords"
-  }}
-]
-
-Do not include any explanations, markdown formatting, or additional text outside of the JSON array.
-"""
+    # ------------------------------------------------------------------
+    # Response parsing
+    # ------------------------------------------------------------------
 
     def _parse_response(
         self,
         response_text: str,
         job_title: str,
-        question_type: str
+        question_type: str,
     ) -> List[Dict]:
         """Parse Gemini response and extract questions.
-        
-        Tries JSON parsing first with fallback to text parsing for robustness.
-        
+
+        Tries JSON parsing first with fallback to text parsing.
+
         Args:
-            response_text: The raw response from Gemini
-            job_title: The position title
-            question_type: Type of questions
-            
+            response_text: The raw response from Gemini.
+            job_title: The position title.
+            question_type: Type of questions.
+
         Returns:
-            List of formatted question dictionaries
+            List of formatted question dictionaries.
         """
         try:
-            # First try to parse as JSON
             questions = self._try_parse_json(response_text, job_title, question_type)
-            
-            # If JSON parsing succeeded, return results
             if questions:
                 return questions
-            
-            # Fallback to text parsing
+
             logger.info("JSON parsing failed, attempting text parsing")
-            questions = self._try_parse_text(response_text, job_title, question_type)
-            return questions
-        
-        except Exception as e:
-            logger.error(f"Error parsing response: {str(e)}")
+            return self._try_parse_text(response_text, job_title, question_type)
+
+        except Exception as exc:
+            logger.error("Error parsing response: %s", exc)
             return []
-        
+
     def _try_parse_json(
         self,
         response_text: str,
         job_title: str,
-        question_type: str
+        question_type: str,
     ) -> List[Dict]:
         """Try to parse response as JSON.
-        
-        Args:
-            response_text: The raw response text
-            job_title: The position title
-            question_type: Type of questions
-            
+
         Returns:
-            List of question dictionaries if successful, empty list otherwise
+            List of question dictionaries if successful, empty list otherwise.
         """
-        questions = []
-        
+        questions: List[Dict] = []
+
         try:
-            # Clean up response text to extract JSON
-            cleaned_text = self._extract_json_from_response(response_text)
-            
-            if not cleaned_text:
+            cleaned = self._extract_json_from_response(response_text)
+            if not cleaned:
                 logger.debug("Could not extract JSON from response")
                 return []
-            
-            # Try to find and parse the JSON array
-            start_idx = cleaned_text.find('[')
-            end_idx = cleaned_text.rfind(']') + 1
-            
-            if start_idx == -1 or end_idx <= start_idx:
+
+            start = cleaned.find("[")
+            end = cleaned.rfind("]") + 1
+
+            if start == -1 or end <= start:
                 logger.debug("No JSON array found in response")
                 return []
-            
-            json_str = cleaned_text[start_idx:end_idx]
-            
-            # Attempt to parse the JSON
-            questions_data = json.loads(json_str)
-            
+
+            questions_data = json.loads(cleaned[start:end])
+
             if not isinstance(questions_data, list):
                 logger.warning("JSON is not a list")
                 return []
-            
-            # Process each question
+
             for q in questions_data:
                 if isinstance(q, dict) and "question" in q:
                     question = self._format_question(q, job_title, question_type)
                     if question:
                         questions.append(question)
-            
-            logger.info(f"Successfully parsed {len(questions)} questions from JSON")
-        
-        except json.JSONDecodeError as e:
-            logger.debug(f"JSON parsing error: {str(e)}")
-        except Exception as e:
-            logger.debug(f"Unexpected error parsing JSON: {str(e)}")
-        
+
+            logger.info(
+                "Successfully parsed %d questions from JSON", len(questions)
+            )
+
+        except json.JSONDecodeError as exc:
+            logger.debug("JSON parsing error: %s", exc)
+        except Exception as exc:
+            logger.debug("Unexpected error parsing JSON: %s", exc)
+
         return questions
-    
+
     @staticmethod
     def _extract_json_from_response(response_text: str) -> str:
-        """Extract JSON content from response with markdown cleanup.
-        
-        Args:
-            response_text: Raw response text
-            
+        """Strip markdown code-block markers from *response_text*.
+
         Returns:
-            Cleaned text with markdown markers removed
+            Cleaned text with markdown markers removed.
         """
         cleaned = response_text.strip()
-        
-        # Remove markdown code block markers
-        markers = ["```json", "```"]
-        for marker in markers:
+        for marker in ("```json", "```"):
             if cleaned.startswith(marker):
                 cleaned = cleaned.replace(marker, "", 1)
             if cleaned.endswith("```"):
-                cleaned = cleaned[:cleaned.rfind("```")]
-        
+                cleaned = cleaned[: cleaned.rfind("```")]
         return cleaned.strip()
-        
+
     def _format_question(
         self,
         question_data: Dict,
         job_title: str,
-        question_type: str
+        question_type: str,
     ) -> Optional[Dict]:
         """Format and validate a question from parsed data.
-        
-        Args:
-            question_data: Raw question data from response
-            job_title: The position title
-            question_type: Type of questions
-            
+
         Returns:
-            Formatted question dictionary, or None if invalid
+            Formatted question dictionary, or ``None`` if invalid.
         """
         try:
-            # Validate question text
             question_text = question_data.get("question", "").strip()
             if not question_text:
                 logger.debug("Question text is empty")
                 return None
-            
-            # Determine question type
+
             q_type = self._determine_question_type(question_data, question_type)
-            
-            # Extract and validate difficulty
             difficulty = self._extract_difficulty(question_data)
-            
-            # Extract tags
-            tags = question_data.get("tags", "").strip()
-            if not tags:
-                tags = job_title.lower().replace(" ", ",")
-            
+            tags = question_data.get("tags", "").strip() or job_title.lower().replace(
+                " ", ","
+            )
+
             return {
                 "job_title": job_title,
                 "question_text": question_text,
                 "question_type": q_type,
                 "difficulty": difficulty,
-                "tags": tags
+                "tags": tags,
             }
-        
-        except Exception as e:
-            logger.debug(f"Error formatting question: {str(e)}")
+
+        except Exception as exc:
+            logger.debug("Error formatting question: %s", exc)
             return None
-    
+
     @staticmethod
     def _determine_question_type(question_data: Dict, requested_type: str) -> str:
         """Determine appropriate question type.
-        
-        Args:
-            question_data: Question data from response
-            requested_type: Requested question type
-            
+
         Returns:
-            Validated question type
+            Validated question type string.
         """
         if requested_type != "mixed":
             return requested_type
-        
-        # Use type from response if available
+
         q_type = question_data.get("type", "technical")
-        
-        # Validate type
-        if q_type not in {'technical', 'behavioral'}:
-            return 'technical'
-        
-        return q_type
-    
+        return q_type if q_type in {"technical", "behavioral"} else "technical"
+
     @staticmethod
     def _extract_difficulty(question_data: Dict) -> int:
         """Extract and validate difficulty level.
-        
-        Args:
-            question_data: Question data from response
-            
+
         Returns:
-            Difficulty level between 1 and 5
+            Difficulty level between 1 and 5.
         """
         try:
-            difficulty = int(question_data.get("difficulty", GeminiService.DEFAULT_DIFFICULTY))
+            difficulty = int(
+                question_data.get("difficulty", GeminiService.DEFAULT_DIFFICULTY)
+            )
             return max(
                 GeminiService.MIN_DIFFICULTY,
-                min(difficulty, GeminiService.MAX_DIFFICULTY)
+                min(difficulty, GeminiService.MAX_DIFFICULTY),
             )
         except (ValueError, TypeError):
             return GeminiService.DEFAULT_DIFFICULTY
-        
+
     def _try_parse_text(
         self,
         response_text: str,
         job_title: str,
-        question_type: str
+        question_type: str,
     ) -> List[Dict]:
         """Parse response as plain text when JSON parsing fails.
-        
-        Args:
-            response_text: The raw response text
-            job_title: The position title
-            question_type: Type of questions
-            
+
         Returns:
-            List of question dictionaries
+            List of question dictionaries.
         """
-        questions = []
-        lines = response_text.split('\n')
-        
-        for line in lines:
+        questions: List[Dict] = []
+
+        for line in response_text.split("\n"):
             line = line.strip()
-            
-            # Skip empty lines
-            if not line:
+            if not line or not self._is_question_line(line):
                 continue
-            
-            # Check if line is a question
-            if not self._is_question_line(line):
-                continue
-            
-            # Clean up question format
+
             question_text = self._clean_question_text(line)
-            
-            # Create question from text
             question = self._create_text_question(question_text, job_title, question_type)
             if question:
                 questions.append(question)
-        
-        logger.info(f"Parsed {len(questions)} questions from text")
+
+        logger.info("Parsed %d questions from text", len(questions))
         return questions
-    
+
     @staticmethod
     def _is_question_line(line: str) -> bool:
-        """Check if a line appears to be a question.
-        
-        Args:
-            line: Line to check
-            
-        Returns:
-            True if line looks like a question
-        """
-        if '?' in line:
+        """Return ``True`` if *line* looks like a question."""
+        if "?" in line:
             return True
-        
-        if line.startswith(('Q:', 'Q1:', 'Q2:', 'Q3:', 'Q4:', 'Q5:', '-')):
+        if line.startswith(("Q:", "Q1:", "Q2:", "Q3:", "Q4:", "Q5:", "-")):
             return True
-        
-        if line.startswith(('Question 1:', 'Question 2:')):
+        if line.startswith(("Question 1:", "Question 2:")):
             return True
-        
-        # Check for numbered format "1. " or "1) "
-        if line and line[0].isdigit() and len(line) > 2:
-            if line[1:3] in ('. ', ') '):
-                return True
-        
+        if line and line[0].isdigit() and len(line) > 2 and line[1:3] in (". ", ") "):
+            return True
         return False
-    
+
     @staticmethod
     def _clean_question_text(line: str) -> str:
-        """Clean up question format by removing prefixes.
-        
-        Args:
-            line: Raw line from response
-            
-        Returns:
-            Cleaned question text
-        """
-        # Remove "Q:" or "Question:" prefixes
-        if ':' in line:
-            parts = line.split(':', 1)
-            if parts[0].strip().lower().startswith(('q', 'question')):
+        """Remove common prefixes from a question line."""
+        if ":" in line:
+            parts = line.split(":", 1)
+            if parts[0].strip().lower().startswith(("q", "question")):
                 return parts[1].strip()
-        
-        # Remove dash prefix
-        if line.startswith('-'):
+        if line.startswith("-"):
             return line[1:].strip()
-        
-        # Remove numbered prefix "1. " or "1) "
-        if line and line[0].isdigit() and len(line) > 2 and line[1:3] in ('. ', ') '):
-            space_idx = line.find(' ')
+        if line and line[0].isdigit() and len(line) > 2 and line[1:3] in (". ", ") "):
+            space_idx = line.find(" ")
             if space_idx > 0:
-                return line[space_idx + 1:].strip()
-        
+                return line[space_idx + 1 :].strip()
         return line
-        
+
     def _create_text_question(
         self,
         question_text: str,
         job_title: str,
-        question_type: str
+        question_type: str,
     ) -> Optional[Dict]:
-        """Create a question from plain text format.
-        
-        Args:
-            question_text: The extracted question text
-            job_title: The position title
-            question_type: Type of questions
-            
+        """Create a question dict from plain-text format.
+
         Returns:
-            Formatted question dictionary, or None if invalid
+            Formatted question dictionary, or ``None`` if invalid.
         """
         try:
             if not question_text or not question_text.strip():
                 return None
-            
-            # Determine question type
+
             q_type = self._infer_question_type(question_text, question_type)
-            
-            # Estimate difficulty based on content
             difficulty = self._infer_difficulty(question_text)
-            
-            # Generate tags based on keywords
             tags = self._generate_tags(question_text, job_title)
-            
+
             return {
                 "job_title": job_title,
                 "question_text": question_text.strip(),
                 "question_type": q_type,
                 "difficulty": difficulty,
-                "tags": tags
+                "tags": tags,
             }
-        
-        except Exception as e:
-            logger.debug(f"Error creating text question: {str(e)}")
+
+        except Exception as exc:
+            logger.debug("Error creating text question: %s", exc)
             return None
-    
+
     @staticmethod
     def _infer_question_type(question_text: str, requested_type: str) -> str:
-        """Infer question type from content if type is 'mixed'.
-        
-        Args:
-            question_text: The question text
-            requested_type: Requested question type
-            
-        Returns:
-            Inferred question type
-        """
+        """Infer question type from content when type is ``'mixed'``."""
         if requested_type != "mixed":
             return requested_type
-        
-        # Keywords that suggest behavioral questions
+
         behavioral_keywords = {
-            'experience', 'team', 'conflict', 'leadership',
-            'challenge', 'difficult', 'situation', 'example',
-            'disagree', 'feedback', 'mistake', 'proud',
-            'improve', 'strength', 'weakness', 'worked with'
+            "experience",
+            "team",
+            "conflict",
+            "leadership",
+            "challenge",
+            "difficult",
+            "situation",
+            "example",
+            "disagree",
+            "feedback",
+            "mistake",
+            "proud",
+            "improve",
+            "strength",
+            "weakness",
+            "worked with",
         }
-        
+
         text_lower = question_text.lower()
-        if any(keyword in text_lower for keyword in behavioral_keywords):
+        if any(kw in text_lower for kw in behavioral_keywords):
             return "behavioral"
-        
         return "technical"
-    
+
     @staticmethod
     def _infer_difficulty(question_text: str) -> int:
-        """Estimate difficulty level based on question content.
-        
-        Args:
-            question_text: The question text
-            
-        Returns:
-            Estimated difficulty level
-        """
+        """Estimate difficulty level based on question content."""
         text_lower = question_text.lower()
         word_count = len(question_text.split())
-        
-        # Advanced/Senior indicators
-        if any(kw in text_lower for kw in ['senior', 'advanced', 'complex', 'architecture', 'design']):
+
+        if any(
+            kw in text_lower
+            for kw in ["senior", "advanced", "complex", "architecture", "design"]
+        ):
             return GeminiService.MAX_DIFFICULTY
-        
-        # Entry-level indicators
-        if any(kw in text_lower for kw in ['basic', 'simple', 'beginner', 'fundamental']):
+
+        if any(
+            kw in text_lower
+            for kw in ["basic", "simple", "beginner", "fundamental"]
+        ):
             return 2
-        
-        # Longer questions tend to be more complex
+
         if word_count > 25:
             return 4
-        
+
         return GeminiService.DEFAULT_DIFFICULTY
-    
+
     @staticmethod
     def _generate_tags(question_text: str, job_title: str) -> str:
-        """Generate tags based on keywords in question and job title.
-        
-        Args:
-            question_text: The question text
-            job_title: The job title
-            
-        Returns:
-            Comma-separated tags
-        """
+        """Generate comma-separated tags from question keywords and job title."""
         tags = job_title.lower().replace(" ", ",")
-        
-        # Keywords to extract as tags
+
         keywords = {
-            'design', 'algorithm', 'data structure', 'architecture',
-            'database', 'performance', 'scalability', 'leadership',
-            'teamwork', 'communication', 'problem-solving', 'api',
-            'testing', 'deployment', 'security', 'optimization'
+            "design",
+            "algorithm",
+            "data structure",
+            "architecture",
+            "database",
+            "performance",
+            "scalability",
+            "leadership",
+            "teamwork",
+            "communication",
+            "problem-solving",
+            "api",
+            "testing",
+            "deployment",
+            "security",
+            "optimization",
         }
-        
+
         text_lower = question_text.lower()
-        additional_tags = []
-        
-        for keyword in keywords:
-            if keyword in text_lower:
-                additional_tags.append(keyword.replace(" ", "_"))
-        
-        if additional_tags:
-            tags += ',' + ','.join(additional_tags)
-        
+        additional = [
+            kw.replace(" ", "_") for kw in keywords if kw in text_lower
+        ]
+
+        if additional:
+            tags += "," + ",".join(additional)
+
         return tags
