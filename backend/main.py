@@ -9,7 +9,6 @@ import logging
 from database import get_db, engine
 from models import Base
 from routes import questions, stats
-from services.gemini_service import GeminiService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,18 +24,28 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware — allow the nginx frontend container, local dev, and the EC2 host
+_cors_origins = [
+    "http://localhost",
+    "http://localhost:80",
+    "http://localhost:3000",
+]
+# Allow any additional origin configured via environment variable (e.g. EC2 public URL)
+_extra_origin = os.getenv("CORS_ORIGIN")
+if _extra_origin:
+    _cors_origins.append(_extra_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:80", "http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Lazy initialization flags
+# Lazy initialization flag
 _db_initialized = False
-_gemini_service = None
+
 
 def ensure_db_initialized():
     """Initialize database tables on first use (lazy initialization)"""
@@ -51,22 +60,11 @@ def ensure_db_initialized():
             logger.error(f"Failed to create database tables: {e}")
             raise
 
-def get_gemini_service():
-    """Get or initialize Gemini service lazily"""
-    global _gemini_service
-    if _gemini_service is None:
-        try:
-            logger.info("Initializing Gemini service...")
-            _gemini_service = GeminiService()
-            logger.info("Gemini service initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini service: {e}")
-            raise
-    return _gemini_service
 
 # Include routers
 app.include_router(questions.router, prefix="/api/questions", tags=["questions"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -77,9 +75,11 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Startup error: {e}")
 
+
 @app.get("/")
 async def root():
     return {"message": "Interview Prep Platform API", "version": "1.0.0"}
+
 
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
@@ -91,6 +91,7 @@ async def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn

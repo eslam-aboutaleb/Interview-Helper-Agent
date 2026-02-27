@@ -11,50 +11,38 @@ interface StatCardProps {
   index: number;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ 
-  title, 
-  value, 
-  subtitle, 
-  icon: Icon, 
-  color, 
-  index 
-}) => {
-  const colorClasses = {
-    blue: 'from-blue-500 to-blue-600 bg-blue-100',
-    green: 'from-green-500 to-green-600 bg-green-100',
-    gray: 'from-gray-600 to-gray-700 bg-gray-100',
-    orange: 'from-orange-500 to-orange-600 bg-orange-100',
-    red: 'from-red-500 to-red-600 bg-red-100',
+const StatCard: React.FC<StatCardProps> = ({ title, value, subtitle, icon: Icon, color, index }) => {
+  const iconColors = {
+    blue: 'text-blue-400',
+    green: 'text-accent',
+    gray: 'text-sidebar-muted',
+    orange: 'text-orange-400',
+    red: 'text-red-400',
+  };
+
+  const iconBg = {
+    blue: 'bg-blue-500/15',
+    green: 'bg-accent/15',
+    gray: 'bg-canvas-hover',
+    orange: 'bg-orange-500/15',
+    red: 'bg-red-500/15',
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.1 }}
-      className="bg-white rounded-2xl border border-gray-200 p-6 shadow-soft hover:shadow-medium transition-all duration-300 group"
-      whileHover={{ y: -2 }}
+      transition={{ duration: 0.3, delay: index * 0.08 }}
+      className="bg-canvas-surface border border-canvas-border rounded-xl p-5 hover:border-canvas-hover transition-colors duration-200"
     >
-      <div className="flex items-center space-x-4">
-        <motion.div 
-          className={`p-3 ${colorClasses[color]} rounded-xl group-hover:scale-110 transition-transform duration-300`}
-          whileHover={{ rotate: 5 }}
-        >
-          <Icon className="w-6 h-6 text-white" />
-        </motion.div>
-        <div className="flex-1">
-          <motion.p 
-            className="text-3xl font-bold text-gray-900 mb-1"
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.5, delay: index * 0.1 + 0.2 }}
-          >
-            {value}
-          </motion.p>
-          <p className="text-sm font-medium text-gray-700">{title}</p>
-          <p className="text-xs text-gray-500">{subtitle}</p>
+      <div className="flex items-start justify-between mb-4">
+        <div className={`p-2.5 ${iconBg[color]} rounded-lg`}>
+          <Icon className={`w-5 h-5 ${iconColors[color]}`} />
         </div>
       </div>
+      <p className="text-2xl font-bold text-sidebar-text mb-1">{value}</p>
+      <p className="text-sm font-medium text-sidebar-text mb-0.5">{title}</p>
+      <p className="text-xs text-sidebar-muted">{subtitle}</p>
     </motion.div>
   );
 };

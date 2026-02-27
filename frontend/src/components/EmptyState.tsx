@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Package, RefreshCw } from 'lucide-react';
+import { Package } from 'lucide-react';
+import LoadingSpinner from './LoadingSpinner';
 
 interface EmptyStateProps {
   title: string;
@@ -17,24 +18,24 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   icon,
   actionLabel,
   onAction,
-  actionLoading = false
+  actionLoading = false,
 }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="flex items-center justify-center min-h-96 px-4"
+      className="flex items-center justify-center min-h-64 px-4"
     >
-      <div className="text-center max-w-md">
-        <div className="flex justify-center mb-4">
-          <div className="p-6 bg-gray-100 rounded-full">
-            {icon || <Package className="w-12 h-12 text-gray-400" />}
+      <div className="text-center max-w-sm">
+        <div className="flex justify-center mb-5">
+          <div className="p-5 bg-canvas-surface rounded-2xl border border-canvas-border">
+            {icon || <Package className="w-10 h-10 text-sidebar-muted" />}
           </div>
         </div>
 
-        <h3 className="text-2xl font-bold text-gray-900 mb-2">{title}</h3>
-        <p className="text-gray-600 mb-6">{message}</p>
+        <h3 className="text-lg font-semibold text-sidebar-text mb-2">{title}</h3>
+        <p className="text-sm text-sidebar-muted mb-6 leading-relaxed">{message}</p>
 
         {actionLabel && onAction && (
           <motion.button
@@ -42,11 +43,9 @@ const EmptyState: React.FC<EmptyStateProps> = ({
             disabled={actionLoading}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {actionLoading && (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            )}
+            {actionLoading && <LoadingSpinner size="sm" />}
             {actionLabel}
           </motion.button>
         )}

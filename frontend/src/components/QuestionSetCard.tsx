@@ -1,4 +1,6 @@
-import React from "react";
+import React from 'react';
+import { motion } from 'framer-motion';
+import { FolderOpen, MessageSquare, Briefcase } from 'lucide-react';
 
 interface QuestionSetCardProps {
   id: number;
@@ -18,22 +20,48 @@ const QuestionSetCard: React.FC<QuestionSetCardProps> = ({
   onSelect,
 }) => {
   return (
-    <div className="bg-white shadow-md rounded-lg p-4 hover:shadow-lg transition-shadow">
-      <h3 className="text-lg font-semibold">{name}</h3>
-      <p className="text-sm text-gray-600 mt-1">{jobTitle}</p>
-      <p className="mt-2 text-gray-700">{description}</p>
-      <div className="flex justify-between items-center mt-4">
-        <span className="text-sm text-gray-500">{questionCount} questions</span>
+    <motion.div
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.15 }}
+      className="bg-canvas-surface border border-canvas-border rounded-xl p-5 hover:border-canvas-hover transition-colors duration-200 flex flex-col"
+    >
+      {/* Icon + title */}
+      <div className="flex items-start gap-3 mb-3">
+        <div className="p-2.5 bg-accent/15 rounded-lg flex-shrink-0">
+          <FolderOpen className="w-5 h-5 text-accent" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-sidebar-text truncate">{name}</h3>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <Briefcase className="w-3.5 h-3.5 text-sidebar-muted flex-shrink-0" />
+            <span className="text-xs text-sidebar-muted truncate">{jobTitle}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Description */}
+      {description && (
+        <p className="text-xs text-sidebar-muted leading-relaxed mb-4 flex-1 line-clamp-2">
+          {description}
+        </p>
+      )}
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-auto pt-3 border-t border-canvas-border">
+        <div className="flex items-center gap-1.5 text-xs text-sidebar-muted">
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>{questionCount} questions</span>
+        </div>
         {onSelect && (
           <button
             onClick={onSelect}
-            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="text-xs font-medium text-accent hover:text-accent-hover transition-colors"
           >
-            View
+            View →
           </button>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 

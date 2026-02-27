@@ -420,9 +420,9 @@ class StatsResponse(BaseModel):
     )
     average_difficulty: float = Field(
         ...,
-        ge=1.0,
+        ge=0.0,
         le=5.0,
-        description="Average difficulty level across all questions",
+        description="Average difficulty level across all questions (0.0 when no questions exist)",
         example=3.2
     )
     flagged_questions: int = Field(

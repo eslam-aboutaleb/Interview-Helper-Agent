@@ -1,11 +1,12 @@
 import React from 'react';
-import { AlertCircle, AlertTriangle, Info, CheckCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, CheckCircle, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface AlertProps {
   type: 'error' | 'warning' | 'info' | 'success';
   title?: string;
   message: string;
+  details?: Record<string, any>;
   onDismiss?: () => void;
   actionLabel?: string;
   onAction?: () => void;
@@ -19,64 +20,66 @@ const Alert: React.FC<AlertProps> = ({
   onDismiss,
   actionLabel,
   onAction,
-  dismissible = true
+  dismissible = true,
 }) => {
   const styles = {
     error: {
-      bgColor: 'bg-red-50',
-      borderColor: 'border-red-200',
-      iconColor: 'text-red-600',
+      border: 'border-red-500/30',
+      bg: 'bg-red-500/10',
       icon: AlertCircle,
-      buttonColor: 'hover:bg-red-100'
+      iconColor: 'text-red-400',
+      titleColor: 'text-red-300',
+      btnBg: 'bg-red-500/20 hover:bg-red-500/30 text-red-300',
     },
     warning: {
-      bgColor: 'bg-yellow-50',
-      borderColor: 'border-yellow-200',
-      iconColor: 'text-yellow-600',
+      border: 'border-yellow-500/30',
+      bg: 'bg-yellow-500/10',
       icon: AlertTriangle,
-      buttonColor: 'hover:bg-yellow-100'
+      iconColor: 'text-yellow-400',
+      titleColor: 'text-yellow-300',
+      btnBg: 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300',
     },
     info: {
-      bgColor: 'bg-blue-50',
-      borderColor: 'border-blue-200',
-      iconColor: 'text-blue-600',
+      border: 'border-blue-500/30',
+      bg: 'bg-blue-500/10',
       icon: Info,
-      buttonColor: 'hover:bg-blue-100'
+      iconColor: 'text-blue-400',
+      titleColor: 'text-blue-300',
+      btnBg: 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300',
     },
     success: {
-      bgColor: 'bg-green-50',
-      borderColor: 'border-green-200',
-      iconColor: 'text-green-600',
+      border: 'border-accent/30',
+      bg: 'bg-accent/10',
       icon: CheckCircle,
-      buttonColor: 'hover:bg-green-100'
-    }
+      iconColor: 'text-accent',
+      titleColor: 'text-accent',
+      btnBg: 'bg-accent/20 hover:bg-accent/30 text-accent',
+    },
   };
 
-  const style = styles[type];
-  const IconComponent = style.icon;
+  const s = styles[type];
+  const Icon = s.icon;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -10 }}
+      initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
+      exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.2 }}
-      className={`${style.bgColor} ${style.borderColor} border rounded-lg p-4 flex gap-4 items-start`}
+      className={`${s.bg} ${s.border} border rounded-xl p-4 flex gap-3 items-start`}
     >
-      <IconComponent className={`${style.iconColor} w-5 h-5 flex-shrink-0 mt-0.5`} />
+      <Icon className={`${s.iconColor} w-5 h-5 flex-shrink-0 mt-0.5`} />
 
       <div className="flex-1 min-w-0">
         {title && (
-          <h3 className={`font-semibold text-gray-900 mb-1 ${type === 'error' ? 'text-red-900' : ''}`}>
-            {title}
-          </h3>
+          <h3 className={`font-semibold text-sm mb-1 ${s.titleColor}`}>{title}</h3>
         )}
-        <p className="text-sm text-gray-700">{message}</p>
+        <p className="text-sm text-sidebar-muted">{message}</p>
 
         {actionLabel && onAction && (
           <button
             onClick={onAction}
-            className={`mt-3 text-sm font-medium text-gray-700 hover:text-gray-900 ${style.buttonColor} px-3 py-1.5 rounded transition-colors`}
+            className={`mt-3 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${s.btnBg}`}
           >
             {actionLabel}
           </button>
@@ -86,16 +89,10 @@ const Alert: React.FC<AlertProps> = ({
       {dismissible && onDismiss && (
         <button
           onClick={onDismiss}
-          className={`flex-shrink-0 text-gray-400 hover:text-gray-600 ${style.buttonColor} p-1 rounded transition-colors`}
+          className="flex-shrink-0 text-sidebar-muted hover:text-sidebar-text p-1 rounded-lg hover:bg-canvas-hover transition-colors"
           aria-label="Dismiss"
         >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fillRule="evenodd"
-              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
+          <X className="w-4 h-4" />
         </button>
       )}
     </motion.div>

@@ -44,7 +44,19 @@ export function parseAxiosError(error: unknown): ErrorResponse {
 
   // Validation error (400)
   if (status === 400) {
-    const message = data?.detail || data?.message || 'Invalid input. Please check the highlighted fields.';
+    // FastAPI can return detail as a string or as a list of validation error objects
+    let message: string;
+    if (Array.isArray(data?.detail)) {
+      // Pydantic validation errors: [{loc: [...], msg: "...", type: "..."}]
+      message = data.detail
+        .map((e: any) => {
+          const field = Array.isArray(e.loc) ? e.loc.slice(1).join('.') : '';
+          return field ? `${field}: ${e.msg}` : e.msg;
+        })
+        .join('; ');
+    } else {
+      message = data?.detail || data?.message || 'Invalid input. Please check the highlighted fields.';
+    }
     return {
       type: ErrorType.VALIDATION,
       message,
@@ -73,11 +85,24 @@ export function parseAxiosError(error: unknown): ErrorResponse {
     };
   }
 
-  // Server error (5xx)
-  if (status && status >= 500) {
+  // Service unavailable (503) — AI service not ready
+  if (status === 503) {
     return {
       type: ErrorType.SERVER,
-      message: 'Server error. Please try again later.',
+      message: data?.detail || 'AI service is temporarily unavailable. Please check your GEMINI_API_KEY and try again.',
+      statusCode: 503,
+      details: data
+    };
+  }
+
+  // Server error (5xx)
+  if (status && status >= 500) {
+    const detail = Array.isArray(data?.detail)
+      ? data.detail.map((e: any) => e.msg || String(e)).join('; ')
+      : data?.detail || data?.message;
+    return {
+      type: ErrorType.SERVER,
+      message: detail || 'Server error. Please try again later.',
       statusCode: status,
       details: data
     };

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Flag, Trash2, Calendar, Tag, Loader } from 'lucide-react';
+import { Flag, Trash2, Calendar, Tag, Loader2, Copy, Check } from 'lucide-react';
 import { Question } from '../types';
 
 interface QuestionCardProps {
   question: Question;
+  questionNumber?: number;
   isLoading?: boolean;
   onToggleFlag: (id: number) => void;
   onUpdateDifficulty: (id: number, difficulty: number) => void;
@@ -12,135 +13,197 @@ interface QuestionCardProps {
   index: number;
 }
 
+const difficultyLabel = ['', 'Beginner', 'Easy', 'Medium', 'Hard', 'Expert'];
+const difficultyColor = [
+  '',
+  'text-green-400 bg-green-400/10 border-green-400/20',
+  'text-blue-400 bg-blue-400/10 border-blue-400/20',
+  'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+  'text-orange-400 bg-orange-400/10 border-orange-400/20',
+  'text-red-400 bg-red-400/10 border-red-400/20',
+];
+
 const QuestionCard: React.FC<QuestionCardProps> = ({
   question,
+  questionNumber,
   isLoading = false,
   onToggleFlag,
   onUpdateDifficulty,
   onDelete,
   index,
 }) => {
-  const getDifficultyColor = (difficulty: number): string => {
-    const colors = {
-      1: 'bg-success-100 text-success-800 border-success-200',
-      2: 'bg-primary-100 text-primary-800 border-primary-200',
-      3: 'bg-warning-100 text-warning-800 border-warning-200',
-      4: 'bg-error-100 text-error-800 border-error-200',
-      5: 'bg-gray-100 text-gray-800 border-gray-200',
-    };
-    return colors[difficulty as keyof typeof colors] || colors[3];
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(question.question_text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = question.question_text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
-  const getTypeColor = (type: string): string => {
-    return type === 'technical' 
-      ? 'bg-blue-100 text-blue-800 border-blue-200'
-      : 'bg-gray-100 text-gray-800 border-gray-200';
+  // Safely parse tags — handle tags that may contain spaces or special chars
+  const parseTags = (tags: string): string[] => {
+    if (!tags) return [];
+    return tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0)
+      .slice(0, 8); // limit to 8 tags for display
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="bg-white rounded-2xl border border-gray-200 p-6 shadow-soft hover:shadow-medium transition-all duration-300 group"
+      transition={{ duration: 0.25, delay: index * 0.04 }}
+      className={`bg-canvas-surface border rounded-xl p-5 transition-colors duration-200 ${
+        question.is_flagged ? 'border-yellow-500/30' : 'border-canvas-border hover:border-canvas-hover'
+      }`}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center space-x-3 mb-4">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getTypeColor(question.question_type)}`}>
-              {question.question_type}
+      {/* Top row: number + badges + actions */}
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Question number */}
+          {questionNumber !== undefined && (
+            <span className="text-xs font-bold text-sidebar-muted bg-canvas-hover px-2 py-0.5 rounded-md border border-canvas-border min-w-[28px] text-center">
+              #{questionNumber}
             </span>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getDifficultyColor(question.difficulty)}`}>
-              Level {question.difficulty}
-            </span>
-            <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm border border-gray-200">
-              {question.job_title}
-            </span>
-            {question.is_flagged && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="flex items-center"
-              >
-                <Flag className="w-4 h-4 text-warning-500" />
-              </motion.div>
-            )}
-          </div>
-          
-          <p className="text-gray-900 font-medium text-lg mb-4 leading-relaxed">
-            {question.question_text}
-          </p>
-          
-          {question.tags && (
-            <div className="flex flex-wrap gap-2 mb-4">
-              <Tag className="w-4 h-4 text-gray-400" />
-              {question.tags.split(',').map((tag, tagIndex) => (
-                <span
-                  key={tagIndex}
-                  className="px-2 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs border border-gray-200"
-                >
-                  {tag.trim()}
-                </span>
-              ))}
-            </div>
           )}
-          
-          <div className="flex items-center text-xs text-gray-500">
-            <Calendar className="w-3 h-3 mr-1" />
-            Created: {new Date(question.created_at).toLocaleDateString()}
-          </div>
+
+          {/* Type badge */}
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+              question.question_type === 'technical'
+                ? 'text-blue-400 bg-blue-400/10 border-blue-400/20'
+                : 'text-purple-400 bg-purple-400/10 border-purple-400/20'
+            }`}
+          >
+            {question.question_type}
+          </span>
+
+          {/* Difficulty badge */}
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+              difficultyColor[question.difficulty] || difficultyColor[3]
+            }`}
+          >
+            {difficultyLabel[question.difficulty] || `Level ${question.difficulty}`}
+          </span>
+
+          {/* Job title */}
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium text-sidebar-muted bg-canvas-hover border border-canvas-border">
+            {question.job_title}
+          </span>
+
+          {/* Flag indicator */}
+          {question.is_flagged && (
+            <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium text-yellow-400 bg-yellow-400/10 border border-yellow-400/20">
+              <Flag className="w-3 h-3" />
+              Flagged
+            </span>
+          )}
         </div>
 
-        <div className="flex flex-col space-y-3 ml-6">
-          {/* Difficulty Selector */}
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Difficulty selector */}
           <select
             value={question.difficulty}
             onChange={(e) => onUpdateDifficulty(question.id, parseInt(e.target.value))}
             disabled={isLoading}
             aria-label={`Set difficulty for question ${question.id}`}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-xs bg-canvas-hover border border-canvas-border text-sidebar-muted rounded-lg px-2 py-1.5 focus:border-accent focus:outline-none disabled:opacity-50 cursor-pointer"
           >
-            {[1, 2, 3, 4, 5].map(level => (
-              <option key={level} value={level}>Level {level}</option>
+            {[1, 2, 3, 4, 5].map((level) => (
+              <option key={level} value={level}>
+                {difficultyLabel[level]}
+              </option>
             ))}
           </select>
 
-          <div className="flex space-x-2">
-            <motion.button
-              onClick={() => onToggleFlag(question.id)}
-              disabled={isLoading}
-              aria-label={question.is_flagged ? 'Unflag question' : 'Flag question'}
-              className={`p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
-                question.is_flagged
-                  ? 'bg-warning-100 text-warning-600 border border-warning-200'
-                  : 'bg-gray-100 text-gray-600 hover:bg-warning-100 hover:text-warning-600 border border-gray-200'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
-              whileHover={!isLoading ? { scale: 1.05 } : undefined}
-              whileTap={!isLoading ? { scale: 0.95 } : undefined}
-            >
-              {isLoading ? (
-                <Loader className="w-4 h-4 animate-spin" />
-              ) : (
-                <Flag className="w-4 h-4" />
-              )}
-            </motion.button>
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            aria-label="Copy question text"
+            className="p-1.5 rounded-lg text-sidebar-muted hover:text-sidebar-text hover:bg-canvas-hover transition-colors duration-150"
+            title="Copy question"
+          >
+            {copied ? (
+              <Check className="w-4 h-4 text-accent" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
 
-            <motion.button
-              onClick={() => onDelete(question.id)}
-              disabled={isLoading}
-              aria-label="Delete question"
-              className={`p-2 bg-gray-100 text-gray-600 hover:bg-error-100 hover:text-error-600 rounded-lg transition-all duration-200 border border-gray-200 flex items-center justify-center ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
-              whileHover={!isLoading ? { scale: 1.05 } : undefined}
-              whileTap={!isLoading ? { scale: 0.95 } : undefined}
-            >
-              {isLoading ? (
-                <Loader className="w-4 h-4 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4" />
-              )}
-            </motion.button>
-          </div>
+          {/* Flag button */}
+          <button
+            onClick={() => onToggleFlag(question.id)}
+            disabled={isLoading}
+            aria-label={question.is_flagged ? 'Unflag question' : 'Flag question'}
+            className={`p-1.5 rounded-lg transition-colors duration-150 ${
+              question.is_flagged
+                ? 'text-yellow-400 bg-yellow-400/10 hover:bg-yellow-400/20'
+                : 'text-sidebar-muted hover:text-yellow-400 hover:bg-yellow-400/10'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Flag className="w-4 h-4" />
+            )}
+          </button>
+
+          {/* Delete button */}
+          <button
+            onClick={() => onDelete(question.id)}
+            disabled={isLoading}
+            aria-label="Delete question"
+            className="p-1.5 rounded-lg text-sidebar-muted hover:text-red-400 hover:bg-red-400/10 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+          </button>
         </div>
+      </div>
+
+      {/* Question text */}
+      <p className="text-sidebar-text text-sm leading-relaxed mb-4 whitespace-pre-wrap">
+        {question.question_text}
+      </p>
+
+      {/* Tags */}
+      {question.tags && parseTags(question.tags).length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <Tag className="w-3.5 h-3.5 text-sidebar-muted flex-shrink-0" />
+          {parseTags(question.tags).map((tag, i) => (
+            <span
+              key={i}
+              className="px-2 py-0.5 bg-canvas-hover text-sidebar-muted rounded-md text-xs border border-canvas-border"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Date */}
+      <div className="flex items-center gap-1.5 text-xs text-sidebar-muted">
+        <Calendar className="w-3.5 h-3.5" />
+        <span>{new Date(question.created_at).toLocaleDateString()}</span>
       </div>
     </motion.div>
   );

@@ -4,31 +4,28 @@ FROM python:3.11-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     DEBCONF_NOWARNINGS=yes
 
-# System dependencies (curl for healthcheck)
+# System dependencies (curl for healthcheck + uv install)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+# Install uv (fast Python package manager)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
-# Set up virtual environment
-RUN python -m venv /app/venv
+# Copy dependency manifests first (better layer caching)
+COPY pyproject.toml uv.lock ./
 
-# Make sure we use the virtualenv
-ENV PATH="/app/venv/bin:$PATH"
-ENV VIRTUAL_ENV="/app/venv"
-
-# Install Python deps in the virtual environment and create user in a single layer
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install gunicorn uvicorn python-multipart && \
-    useradd -m appuser && \
-    chown -R appuser:appuser /app
+# Install dependencies into the system Python (no venv needed in Docker)
+# --frozen ensures the lock file is respected exactly
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy app code
-COPY --chown=appuser:appuser . .
+COPY . .
+
+# Create non-root user and fix ownership
+RUN useradd -m appuser && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
@@ -36,7 +33,7 @@ USER appuser
 # Expose internal port
 EXPOSE 8000
 
-CMD ["gunicorn", "main:app", \
+CMD ["uv", "run", "gunicorn", "main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "-b", "0.0.0.0:8000", \
      "--workers", "2", \

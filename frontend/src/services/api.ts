@@ -10,7 +10,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 second timeout
+  timeout: 120000, // 120 second timeout — AI generation can take up to 60-90s
 });
 
 // Request interceptor - add request tracking

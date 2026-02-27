@@ -1,0 +1,26 @@
+[project]
+name = "interview-prep-backend"
+version = "1.0.0"
+description = "AI-powered interview question generation and management platform"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.104.1",
+    "uvicorn[standard]==0.24.0",
+    "sqlalchemy==2.0.23",
+    "psycopg2-binary==2.9.9",
+    "python-dotenv==1.0.0",
+    "pydantic==2.5.0",
+    "langchain>=0.1.0",
+    "langchain-google-genai>=0.0.6",
+    "python-multipart==0.0.6",
+    "gunicorn",
+]
+
+[tool.uv]
+# Use uv as the package manager
+# Run: uv sync  to install all dependencies
+# Run: uv run uvicorn main:app  to start the dev server
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
