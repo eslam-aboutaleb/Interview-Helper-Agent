@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Flag, Trash2, Calendar, Tag, Loader2 } from 'lucide-react';
+import { Flag, Trash2, Calendar, Tag, Loader2, Copy, Check } from 'lucide-react';
 import { Question } from '../types';
 
 interface QuestionCardProps {
   question: Question;
+  questionNumber?: number;
   isLoading?: boolean;
   onToggleFlag: (id: number) => void;
   onUpdateDifficulty: (id: number, difficulty: number) => void;
@@ -24,12 +25,43 @@ const difficultyColor = [
 
 const QuestionCard: React.FC<QuestionCardProps> = ({
   question,
+  questionNumber,
   isLoading = false,
   onToggleFlag,
   onUpdateDifficulty,
   onDelete,
   index,
 }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(question.question_text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = question.question_text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // Safely parse tags — handle tags that may contain spaces or special chars
+  const parseTags = (tags: string): string[] => {
+    if (!tags) return [];
+    return tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0)
+      .slice(0, 8); // limit to 8 tags for display
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -39,9 +71,16 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         question.is_flagged ? 'border-yellow-500/30' : 'border-canvas-border hover:border-canvas-hover'
       }`}
     >
-      {/* Top row: badges + actions */}
+      {/* Top row: number + badges + actions */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="flex flex-wrap items-center gap-2">
+          {/* Question number */}
+          {questionNumber !== undefined && (
+            <span className="text-xs font-bold text-sidebar-muted bg-canvas-hover px-2 py-0.5 rounded-md border border-canvas-border min-w-[28px] text-center">
+              #{questionNumber}
+            </span>
+          )}
+
           {/* Type badge */}
           <span
             className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
@@ -77,7 +116,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Difficulty selector */}
           <select
             value={question.difficulty}
@@ -92,6 +131,20 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
               </option>
             ))}
           </select>
+
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            aria-label="Copy question text"
+            className="p-1.5 rounded-lg text-sidebar-muted hover:text-sidebar-text hover:bg-canvas-hover transition-colors duration-150"
+            title="Copy question"
+          >
+            {copied ? (
+              <Check className="w-4 h-4 text-accent" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
 
           {/* Flag button */}
           <button
@@ -128,18 +181,20 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
       </div>
 
       {/* Question text */}
-      <p className="text-sidebar-text text-sm leading-relaxed mb-4">{question.question_text}</p>
+      <p className="text-sidebar-text text-sm leading-relaxed mb-4 whitespace-pre-wrap">
+        {question.question_text}
+      </p>
 
       {/* Tags */}
-      {question.tags && (
+      {question.tags && parseTags(question.tags).length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mb-3">
           <Tag className="w-3.5 h-3.5 text-sidebar-muted flex-shrink-0" />
-          {question.tags.split(',').map((tag, i) => (
+          {parseTags(question.tags).map((tag, i) => (
             <span
               key={i}
               className="px-2 py-0.5 bg-canvas-hover text-sidebar-muted rounded-md text-xs border border-canvas-border"
             >
-              {tag.trim()}
+              {tag}
             </span>
           ))}
         </div>
