@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Questions from './pages/Questions';
 import Generate from './pages/Generate';
 import Stats from './pages/Stats';
+import QuestionSets from './pages/QuestionSets';
 // Import JSX from react to fix the JSX IntrinsicElements issue
 import { JSX } from 'react';
 
@@ -22,6 +23,7 @@ function App() {
               <Route path="/questions" element={<Questions />} />
               <Route path="/generate" element={<Generate />} />
               <Route path="/stats" element={<Stats />} />
+              <Route path="/question-sets" element={<QuestionSets />} />
             </Routes>
           </main>
           <Toaster 

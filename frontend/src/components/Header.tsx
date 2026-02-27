@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Brain, Home, MessageSquare, Plus, BarChart3 } from 'lucide-react';
+import { Brain, Home, MessageSquare, Plus, BarChart3, FolderOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Header: React.FC = () => {
@@ -10,6 +10,7 @@ const Header: React.FC = () => {
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/questions', label: 'Questions', icon: MessageSquare },
     { path: '/generate', label: 'Generate', icon: Plus },
+    { path: '/question-sets', label: 'Sets', icon: FolderOpen },
     { path: '/stats', label: 'Statistics', icon: BarChart3 },
   ];
 
