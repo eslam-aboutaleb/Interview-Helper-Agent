@@ -1,9 +1,12 @@
-import google.generativeai as genai
 import os
 import json
 import logging
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.schema import HumanMessage
+from langchain.callbacks.manager import CallbackManager
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,15 +21,14 @@ class GeminiServiceError(Exception):
 
 
 class GeminiService:
-    """Service for generating interview questions using Google's Gemini API.
+    """Service for generating interview questions using Google's Gemini API via LangChain.
     
     This service provides AI-powered question generation with fallback mechanisms
     and multiple parsing strategies for robustness.
     """
     
-    # Cache for model initialization
-    _model = None
-    _api_configured = False
+    # Cache for LLM initialization
+    _llm = None
     
     # Constants for configuration
     MAX_GENERATION_ATTEMPTS = 2
@@ -41,7 +43,7 @@ class GeminiService:
     MODEL_NAMES = ['gemini-1.5-pro', 'gemini-pro']
     
     def __init__(self):
-        """Initialize Gemini service and configure the API connection (lazy model loading).
+        """Initialize Gemini service and validate the API key (lazy LLM loading).
         
         Raises:
             GeminiServiceError: If API key is not properly configured
@@ -53,56 +55,52 @@ class GeminiService:
                 logger.warning(error_msg)
                 raise GeminiServiceError(error_msg)
             
-            # Only configure API once
-            if not GeminiService._api_configured:
-                genai.configure(api_key=api_key)
-                GeminiService._api_configured = True
-                logger.info("Gemini API configured successfully")
+            self._api_key = api_key
+            logger.info("Gemini API key validated successfully")
         
         except GeminiServiceError:
             raise
         except Exception as e:
             raise GeminiServiceError(f"Failed to initialize Gemini service: {str(e)}")
     
-    def _get_model(self):
-        """Lazily initialize the model on first use.
+    def _get_llm(self, temperature: float = DEFAULT_TEMPERATURE) -> ChatGoogleGenerativeAI:
+        """Create a LangChain ChatGoogleGenerativeAI LLM instance.
         
         Tries multiple model names with fallback mechanism.
         
+        Args:
+            temperature: Sampling temperature for generation
+            
         Returns:
-            genai.GenerativeModel: Initialized Gemini model
+            ChatGoogleGenerativeAI: Initialized LangChain LLM
             
         Raises:
             GeminiServiceError: If all model initialization attempts fail
         """
-        if GeminiService._model is not None:
-            return GeminiService._model
-        
         last_error = None
         for model_name in self.MODEL_NAMES:
             try:
-                GeminiService._model = genai.GenerativeModel(model_name)
-                logger.info(f"Successfully initialized {model_name} model")
-                return GeminiService._model
+                llm = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    google_api_key=self._api_key,
+                    temperature=temperature,
+                    top_p=0.95,
+                    top_k=40,
+                    max_output_tokens=4096,
+                    convert_system_message_to_human=True,
+                )
+                logger.info(f"Successfully initialized LangChain LLM with model {model_name}")
+                return llm
             
             except Exception as e:
                 last_error = e
-                logger.warning(f"Failed to initialize {model_name}: {str(e)}")
+                logger.warning(f"Failed to initialize LangChain LLM with {model_name}: {str(e)}")
                 continue
         
         # All attempts failed
         raise GeminiServiceError(
-            f"Failed to initialize any Gemini model. Last error: {str(last_error)}"
+            f"Failed to initialize any Gemini model via LangChain. Last error: {str(last_error)}"
         )
-    
-    @property
-    def model(self):
-        """Property to access model with lazy initialization.
-        
-        Returns:
-            genai.GenerativeModel: Initialized Gemini model
-        """
-        return self._get_model()
 
     def generate_questions(
         self,
@@ -110,7 +108,7 @@ class GeminiService:
         count: int = DEFAULT_COUNT,
         question_type: str = "mixed"
     ) -> List[Dict]:
-        """Generate interview questions using Gemini AI.
+        """Generate interview questions using Gemini AI via LangChain.
         
         Uses a multi-attempt strategy with fallback to simplified prompts if needed.
         
@@ -225,23 +223,21 @@ class GeminiService:
                 
                 logger.info(f"Attempt {attempt}/{max_attempts} with temperature={temperature}")
                 
-                # Generate content with proper error handling
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=temperature,
-                        top_p=0.95,
-                        top_k=40,
-                        max_output_tokens=4096,
-                    )
-                )
+                # Get LLM with appropriate temperature
+                llm = self._get_llm(temperature=temperature)
                 
-                if not response or not response.text:
+                # Generate content via LangChain
+                message = HumanMessage(content=prompt)
+                response = llm.invoke([message])
+                
+                response_text = response.content if hasattr(response, 'content') else str(response)
+                
+                if not response_text or not response_text.strip():
                     logger.warning(f"Attempt {attempt}: Empty response from model")
                     continue
                 
                 # Parse response
-                new_questions = self._parse_response(response.text, job_title, question_type)
+                new_questions = self._parse_response(response_text, job_title, question_type)
                 questions.extend(new_questions)
                 
                 # If we got enough questions, break early
@@ -747,4 +743,3 @@ Do not include any explanations, markdown formatting, or additional text outside
             tags += ',' + ','.join(additional_tags)
         
         return tags
-
