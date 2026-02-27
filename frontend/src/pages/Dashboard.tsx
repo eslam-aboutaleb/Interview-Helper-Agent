@@ -1,14 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { MessageSquare, Plus, BarChart3, TrendingUp, Users, Flag, Sparkles, ArrowRight } from 'lucide-react';
+import {
+  MessageSquare,
+  Sparkles,
+  BarChart3,
+  TrendingUp,
+  Users,
+  Flag,
+  ArrowRight,
+  FolderOpen,
+} from 'lucide-react';
 import { questionsApi, statsApi, parseAxiosError } from '../services/api';
 import { Question, Stats } from '../types';
-import { ErrorResponse, ErrorType } from '../services/errorHandler';
+import { ErrorResponse } from '../services/errorHandler';
 import StatCard from '../components/StatCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
-import toast from 'react-hot-toast';
+
+const difficultyLabel = ['', 'Beginner', 'Easy', 'Medium', 'Hard', 'Expert'];
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -26,39 +36,20 @@ const Dashboard: React.FC = () => {
       setError(null);
       const [statsRes, questionsRes] = await Promise.all([
         statsApi.get(),
-        questionsApi.getAll({ limit: 5 })
+        questionsApi.getAll({ limit: 5 }),
       ]);
       setStats(statsRes.data);
       setRecentQuestions(questionsRes.data);
     } catch (err) {
-      const parsedError = parseAxiosError(err);
-      setError(parsedError);
-      console.error('Failed to fetch dashboard data:', parsedError);
+      setError(parseAxiosError(err));
     } finally {
       setLoading(false);
     }
   };
 
-  const getDifficultyColor = (difficulty: number): string => {
-    const colors = {
-      1: 'bg-success-100 text-success-800',
-      2: 'bg-primary-100 text-primary-800',
-      3: 'bg-warning-100 text-warning-800',
-      4: 'bg-error-100 text-error-800',
-      5: 'bg-gray-100 text-gray-800',
-    };
-    return colors[difficulty as keyof typeof colors] || colors[3];
-  };
-
-  const getTypeColor = (type: string): string => {
-    return type === 'technical' 
-      ? 'bg-blue-100 text-blue-800'
-      : 'bg-gray-100 text-gray-800';
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-96">
+      <div className="flex items-center justify-center min-h-64">
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -66,241 +57,186 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Error Alert */}
       {error && (
         <Alert
           type="error"
-          title="Failed to Load Dashboard"
+          title="Failed to load dashboard"
           message={error.message}
-          details={error.details}
           actionLabel="Retry"
           onAction={fetchDashboardData}
           onDismiss={() => setError(null)}
         />
       )}
-      {/* Hero Section */}
-      <motion.div 
-        className="text-center py-16"
-        initial={{ opacity: 0, y: 30 }}
+
+      {/* Hero */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.5 }}
+        className="pt-2"
       >
-        <motion.div
-          className="inline-flex items-center space-x-2 mb-6"
-          initial={{ scale: 0.8 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          <div className="p-4 bg-gradient-to-br from-gray-700 to-gray-800 rounded-2xl shadow-strong">
-            <Sparkles className="w-8 h-8 text-white" />
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-9 h-9 bg-accent rounded-xl flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-white" />
           </div>
-        </motion.div>
-        
-        <motion.h1 
-          className="text-5xl md:text-6xl font-bold text-gray-900 mb-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-        >
-          Welcome to{' '}
-          <span className="bg-gradient-to-r from-gray-700 via-gray-800 to-gray-700 bg-clip-text text-transparent">
-            InterviewPrep
-          </span>
-        </motion.h1>
-        
-        <motion.p 
-          className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.4 }}
-        >
-          Master your interviews with AI-powered question generation. Get personalized technical and behavioral questions 
-          tailored to your target role, track your progress, and ace your next interview.
-        </motion.p>
+          <h1 className="text-2xl font-bold text-sidebar-text">InterviewCoach</h1>
+        </div>
+        <p className="text-sidebar-muted text-sm leading-relaxed max-w-xl">
+          AI-powered interview preparation. Generate personalized questions, track your progress,
+          and ace your next interview.
+        </p>
       </motion.div>
 
-      {/* Quick Actions */}
-      <motion.div 
-        className="grid grid-cols-1 md:grid-cols-3 gap-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.5 }}
+      {/* Quick actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid grid-cols-1 sm:grid-cols-3 gap-3"
       >
         {[
           {
             to: '/generate',
-            title: 'Generate Questions',
-            description: 'Create AI-powered interview questions',
-            icon: Plus,
-            gradient: 'from-gray-600 to-gray-700',
-            hoverColor: 'hover:border-gray-300',
+            label: 'Generate Questions',
+            desc: 'Create AI-powered questions',
+            icon: Sparkles,
+            accent: true,
           },
           {
             to: '/questions',
-            title: 'Manage Questions',
-            description: 'View and organize your questions',
+            label: 'Question Library',
+            desc: 'Browse & manage questions',
             icon: MessageSquare,
-            gradient: 'from-blue-500 to-cyan-600',
-            hoverColor: 'hover:border-blue-300',
+            accent: false,
           },
           {
-            to: '/stats',
-            title: 'View Statistics',
-            description: 'Analyze your preparation progress',
-            icon: BarChart3,
-            gradient: 'from-green-500 to-emerald-600',
-            hoverColor: 'hover:border-green-300',
+            to: '/question-sets',
+            label: 'Question Sets',
+            desc: 'Organized collections',
+            icon: FolderOpen,
+            accent: false,
           },
-        ].map((action, index) => (
+        ].map((item, i) => (
           <motion.div
-            key={action.to}
-            initial={{ opacity: 0, y: 20 }}
+            key={item.to}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.6 + index * 0.1 }}
+            transition={{ duration: 0.3, delay: 0.15 + i * 0.07 }}
           >
             <Link
-              to={action.to}
-              className={`block p-6 bg-white rounded-2xl border border-gray-200 ${action.hoverColor} shadow-soft hover:shadow-medium transition-all duration-300 group`}
+              to={item.to}
+              className={`flex items-center justify-between p-4 rounded-xl border transition-colors duration-200 group ${
+                item.accent
+                  ? 'bg-accent/10 border-accent/30 hover:bg-accent/15'
+                  : 'bg-canvas-surface border-canvas-border hover:border-canvas-hover'
+              }`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <motion.div 
-                    className={`p-3 bg-gradient-to-br ${action.gradient} rounded-xl shadow-medium group-hover:shadow-strong transition-all duration-300`}
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                  >
-                    <action.icon className="w-6 h-6 text-white" />
-                  </motion.div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-gray-600 transition-colors duration-200">
-                      {action.title}
-                    </h3>
-                    <p className="text-gray-600">{action.description}</p>
-                  </div>
+              <div className="flex items-center gap-3">
+                <item.icon
+                  className={`w-5 h-5 ${item.accent ? 'text-accent' : 'text-sidebar-muted group-hover:text-sidebar-text'}`}
+                />
+                <div>
+                  <p className={`text-sm font-medium ${item.accent ? 'text-accent' : 'text-sidebar-text'}`}>
+                    {item.label}
+                  </p>
+                  <p className="text-xs text-sidebar-muted">{item.desc}</p>
                 </div>
-                <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 group-hover:translate-x-1 transition-all duration-200" />
               </div>
+              <ArrowRight className="w-4 h-4 text-sidebar-muted group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </motion.div>
         ))}
       </motion.div>
 
-      {/* Statistics Cards */}
+      {/* Stats */}
       {stats && (
-        <motion.div 
-          className="grid grid-cols-2 md:grid-cols-4 gap-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.8 }}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
         >
-          <StatCard
-            title="Total Questions"
-            value={stats.total_questions}
-            subtitle="Questions generated"
-            icon={MessageSquare}
-            color="blue"
-            index={0}
-          />
-          <StatCard
-            title="Avg Difficulty"
-            value={stats.average_difficulty.toFixed(1)}
-            subtitle="Out of 5.0"
-            icon={TrendingUp}
-            color="green"
-            index={1}
-          />
-          <StatCard
-            title="Flagged"
-            value={stats.flagged_questions}
-            subtitle="Need review"
-            icon={Flag}
-            color="orange"
-            index={2}
-          />
-          <StatCard
-            title="Question Sets"
-            value={stats.total_question_sets}
-            subtitle="Collections created"
-            icon={Users}
-            color="gray"
-            index={3}
-          />
+          <h2 className="text-sm font-semibold text-sidebar-muted uppercase tracking-wider mb-3">
+            Overview
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard title="Total Questions" value={stats.total_questions} subtitle="Generated" icon={MessageSquare} color="blue" index={0} />
+            <StatCard title="Avg Difficulty" value={stats.average_difficulty.toFixed(1)} subtitle="Out of 5.0" icon={TrendingUp} color="green" index={1} />
+            <StatCard title="Flagged" value={stats.flagged_questions} subtitle="Need review" icon={Flag} color="orange" index={2} />
+            <StatCard title="Question Sets" value={stats.total_question_sets} subtitle="Collections" icon={Users} color="gray" index={3} />
+          </div>
         </motion.div>
       )}
 
-      {/* Recent Questions */}
-      <motion.div 
-        className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft"
-        initial={{ opacity: 0, y: 20 }}
+      {/* Recent questions */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 1.0 }}
+        transition={{ duration: 0.4, delay: 0.4 }}
       >
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Recent Questions</h2>
-            <p className="text-gray-600 mt-1">Your latest generated questions</p>
-          </div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-sidebar-muted uppercase tracking-wider">
+            Recent Questions
+          </h2>
           <Link
             to="/questions"
-            className="inline-flex items-center space-x-2 text-gray-700 hover:text-gray-900 font-medium transition-colors duration-200 group"
+            className="text-xs text-accent hover:text-accent-hover transition-colors flex items-center gap-1"
           >
-            <span>View all</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
+            View all <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="space-y-4">
-          {recentQuestions.length === 0 ? (
-            <motion.div 
-              className="text-center py-16"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5 }}
+        {recentQuestions.length === 0 ? (
+          <div className="bg-canvas-surface border border-canvas-border rounded-xl p-8 text-center">
+            <MessageSquare className="w-8 h-8 text-sidebar-muted mx-auto mb-3" />
+            <p className="text-sm font-medium text-sidebar-text mb-1">No questions yet</p>
+            <p className="text-xs text-sidebar-muted mb-4">
+              Generate your first set of interview questions to get started
+            </p>
+            <Link
+              to="/generate"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
             >
-              <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                <MessageSquare className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No questions yet</h3>
-              <p className="text-gray-600 mb-6">Generate your first set of interview questions to get started</p>
-              <Link
-                to="/generate"
-                className="inline-flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-xl hover:shadow-strong transition-all duration-300 font-medium"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Generate Questions</span>
-              </Link>
-            </motion.div>
-          ) : (
-            recentQuestions.map((question, index) => (
+              <Sparkles className="w-4 h-4" />
+              Generate Questions
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {recentQuestions.map((q, i) => (
               <motion.div
-                key={question.id}
-                initial={{ opacity: 0, x: -20 }}
+                key={q.id}
+                initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-                className="p-4 border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-soft transition-all duration-200"
+                transition={{ duration: 0.25, delay: i * 0.06 }}
+                className="bg-canvas-surface border border-canvas-border rounded-xl p-4 hover:border-canvas-hover transition-colors"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-3">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getTypeColor(question.question_type)}`}>
-                        {question.question_type}
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          q.question_type === 'technical'
+                            ? 'text-blue-400 bg-blue-400/10 border-blue-400/20'
+                            : 'text-purple-400 bg-purple-400/10 border-purple-400/20'
+                        }`}
+                      >
+                        {q.question_type}
                       </span>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDifficultyColor(question.difficulty)}`}>
-                        Level {question.difficulty}
+                      <span className="text-xs text-sidebar-muted bg-canvas-hover px-2 py-0.5 rounded-full border border-canvas-border">
+                        {difficultyLabel[q.difficulty] || `Level ${q.difficulty}`}
                       </span>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                        {question.job_title}
-                      </span>
+                      <span className="text-xs text-sidebar-muted">{q.job_title}</span>
                     </div>
-                    <p className="text-gray-900 font-medium leading-relaxed">{question.question_text}</p>
+                    <p className="text-sm text-sidebar-text leading-relaxed line-clamp-2">
+                      {q.question_text}
+                    </p>
                   </div>
-                  {question.is_flagged && (
-                    <Flag className="w-4 h-4 text-warning-500 ml-4 flex-shrink-0" />
-                  )}
+                  {q.is_flagged && <Flag className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />}
                 </div>
               </motion.div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </motion.div>
     </div>
   );
