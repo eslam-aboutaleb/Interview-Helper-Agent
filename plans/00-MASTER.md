@@ -2,11 +2,12 @@
 
 > Created: 2026-10-03 · Repo: `Interview-Helper-Agent`
 > Branch: `wave0-1-and-plan06` (tracks `origin/wave0-1-and-plan06`)
-> Current state: 523 backend tests passing, 96% coverage, ruff + prettier
-> clean, pushed to `origin` (commit `edb4d72`). Waves 0–2 are largely
-> landed (CI, Alembic, skill-gap/documents UI, charts, search/import/
-> export all present in the tree). Wave 4 (code-review remediation,
-> plans 11–15) added 2026-10-03.
+> Current state: 604 backend tests passing, 96% coverage, ruff +
+> prettier clean, `tsc` strict build clean. Waves 0–2 are fully
+> landed (CI, Alembic, skill-gap/documents UI, charts, company
+> mode + learning plan, search/import/export all present in the
+> tree). Wave 4 (code-review remediation, plans 11–14) executed
+> 2026-10-04.
 
 ## How to use this plan set
 
@@ -43,14 +44,52 @@
 9. **No full-text search, no import/export, no charts, no company-specific
    mode, no learning-plan generation** (P1 items from RECOMMENDATIONS.md).
 
-## Status (2026-10-03)
+## Status (2026-10-04)
 
-Most of the original problems are fixed in the tree: CI exists
-(`.github/workflows/ci.yml`), Alembic has an initial migration, the
-skill-gap/documents UI and charts landed, and search/import/export are
-implemented. Latest push `edb4d72` hardened CORS/DB-URL/secret handling,
-capped uploads at 10 MiB, and added docstrings. A full code review of
-the changed files (2026-10-03) produced the findings planned in wave 4.
+All of waves 0–2 and wave 4 are landed on `wave0-1-and-plan06`:
+
+- Plan 08 (company-specific mode + AI learning plan) landed via
+  merge commit `d4924e9` (branch `plan-08-company-learning`,
+  commit `4f3e6ac`, also pushed). Verified before merge: 584
+  tests, ruff/coverage/prettier/`tsc` clean, alembic
+  upgrade/downgrade round-trip on the new `company` migration
+  (`8f3c1a6d4b72`). Its two new 500-detail leaks were fixed
+  before the merge (generic "Internal server error" +
+  `logger.exception` in `routes/learning.py` and
+  `get_companies`).
+- Plan 11 (`6857e49`): all seven question mutations require
+  `get_current_user`; 401 for anonymous and invalid-token
+  callers; README auth table updated.
+- Plan 14 (`2c9ef3c`): all three Questions-page filters
+  (`question_type`, `job_title`, `company`) refetch
+  server-side; `filteredQuestions` useMemo deleted.
+- Plan 12 (`c7f3636`): token persistence, request/response
+  interceptors, `AuthContext`/`RequireAuth`, Login/Register
+  pages, Header auth UI.
+- Plan 13 (`40ddeb2`): M1–M5, M7, L1–L4, L6, L8 fixed with
+  tests; 604 tests, 96% coverage.
+
+Wave 4 execution adjustments (2026-10-04):
+
+- **Plan 13 M1 scope narrowed**: `routes/learning.py` and
+  `get_companies` were fixed before the plan-08 merge, so M1
+  covered `routes/questions.py` (~12 sites) and
+  `routes/stats.py` only.
+- **Plan 13 L1 caller fixes extended**: `record_action` no
+  longer commits, so every caller must. Besides the seven
+  `routes/questions.py` sites, the three `services/interview_service.py`
+  call sites (session_started / session_completed /
+  question_asked) relied on the internal commit and now commit
+  after `record_action`.
+- **Plan 14 scope extended**: plan 08's company filter joined
+  `question_type`/`job_title` in the server-side move;
+  `QuestionSearchParams` gained a `company` field.
+- **Plan 11 test-update burden**: on FastAPI 0.115.14 the
+  auth dependency is solved *before* body validation, so
+  422-expecting mutation tests also needed `auth_headers`
+  (the "422 survives unchanged" assumption does not hold on
+  this version). DB-error tests needed scoped patches because
+  `get_current_user` commits (refreshes `last_used_at`).
 
 ## Code-review findings (2026-10-03) → wave 4
 
