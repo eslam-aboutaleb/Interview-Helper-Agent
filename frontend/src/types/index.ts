@@ -206,3 +206,22 @@ export interface LearningPlan {
   missing_skills: string[];
   weak_question_types: LearningPlanWeakArea[];
 }
+
+/* ---------- Authentication (Plan 12) ---------- */
+
+/** Mirrors backend UserResponse (backend/schemas.py). */
+export interface User {
+  id: number;
+  email: string;
+  full_name?: string | null;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+/** Mirrors backend TokenResponse: returned by register and login. */
+export interface TokenResponse {
+  token: string;
+  user: User;
+}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Brain,
@@ -10,11 +10,17 @@ import {
   FileText,
   Sparkles,
   GraduationCap,
+  LogIn,
+  UserPlus,
+  LogOut,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 
 const Header: React.FC = () => {
   const location = useLocation();
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Home },
@@ -28,6 +34,60 @@ const Header: React.FC = () => {
   ];
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  // Auth actions adapt to the session state. Text labels are hidden
+  // below `lg` so the compact mobile bar stays icon-only.
+  const authActions = isLoading ? null : isAuthenticated ? (
+    <>
+      <span className="hidden lg:block text-sm font-medium text-gray-600 max-w-[200px] truncate">
+        {user?.email}
+      </span>
+      <motion.button
+        type="button"
+        onClick={handleLogout}
+        disabled={isLoggingOut}
+        className="flex items-center space-x-2 px-4 py-2 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        aria-label="Logout"
+      >
+        <LogOut className="w-4 h-4" />
+        <span className="font-medium hidden lg:inline">Logout</span>
+      </motion.button>
+    </>
+  ) : (
+    <>
+      <Link to="/login" aria-label="Login">
+        <motion.div
+          className="flex items-center space-x-2 px-4 py-2 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all duration-200"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <LogIn className="w-4 h-4" />
+          <span className="font-medium hidden lg:inline">Login</span>
+        </motion.div>
+      </Link>
+      <Link to="/register" aria-label="Register">
+        <motion.div
+          className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-gradient-to-r from-gray-700 to-gray-800 text-white shadow-soft hover:shadow-medium transition-all duration-200"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <UserPlus className="w-4 h-4" />
+          <span className="font-medium hidden lg:inline">Register</span>
+        </motion.div>
+      </Link>
+    </>
+  );
 
   return (
     <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 sticky top-0 z-50 shadow-soft">
@@ -50,51 +110,57 @@ const Header: React.FC = () => {
             </div>
           </Link>
 
-          {/* Navigation */}
-          <nav className="hidden md:flex items-center space-x-2">
-            {navItems.map(({ path, label, icon: Icon }) => (
-              <Link key={path} to={path} className="relative group">
-                <motion.div
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-200 ${
-                    isActive(path)
-                      ? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 shadow-soft'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="font-medium">{label}</span>
-                </motion.div>
-                {isActive(path) && (
+          <div className="flex items-center space-x-2">
+            {/* Navigation */}
+            <nav className="hidden md:flex items-center space-x-2">
+              {navItems.map(({ path, label, icon: Icon }) => (
+                <Link key={path} to={path} className="relative group">
                   <motion.div
-                    className="absolute bottom-0 left-1/2 w-1 h-1 bg-gradient-to-r from-gray-700 to-gray-800 rounded-full"
-                    layoutId="activeIndicator"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    style={{ transform: 'translateX(-50%)' }}
-                  />
-                )}
-              </Link>
-            ))}
-          </nav>
-
-          {/* Mobile navigation */}
-          <div className="md:hidden">
-            <div className="flex items-center space-x-1">
-              {navItems.map(({ path, icon: Icon }) => (
-                <Link
-                  key={path}
-                  to={path}
-                  className={`p-2 rounded-lg transition-all duration-200 ${
-                    isActive(path)
-                      ? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-200 ${
+                      isActive(path)
+                        ? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 shadow-soft'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    }`}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="font-medium">{label}</span>
+                  </motion.div>
+                  {isActive(path) && (
+                    <motion.div
+                      className="absolute bottom-0 left-1/2 w-1 h-1 bg-gradient-to-r from-gray-700 to-gray-800 rounded-full"
+                      layoutId="activeIndicator"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      style={{ transform: 'translateX(-50%)' }}
+                    />
+                  )}
                 </Link>
               ))}
+            </nav>
+
+            {/* Auth actions (desktop) */}
+            <div className="hidden md:flex items-center space-x-2">{authActions}</div>
+
+            {/* Mobile navigation + auth */}
+            <div className="md:hidden">
+              <div className="flex items-center space-x-1">
+                {navItems.map(({ path, icon: Icon }) => (
+                  <Link
+                    key={path}
+                    to={path}
+                    className={`p-2 rounded-lg transition-all duration-200 ${
+                      isActive(path)
+                        ? 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                  </Link>
+                ))}
+                {authActions}
+              </div>
             </div>
           </div>
         </div>

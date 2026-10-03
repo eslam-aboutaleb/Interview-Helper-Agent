@@ -21,6 +21,7 @@ import {
   LearningPlan,
 } from '../types';
 import { parseAxiosError } from './errorHandler';
+import { clearToken, getToken } from './auth';
 
 // The baseURL is removed. All requests are now relative to the current domain.
 // - On EC2, NGINX will proxy requests starting with /api to the backend.
@@ -32,12 +33,40 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 });
 
+// Request interceptor - attach the session token to every request.
+// By the time request interceptors run, config.headers is an
+// AxiosHeaders instance (axios v1), so set() merges the
+// Authorization header without clobbering per-request headers -
+// the multipart upload in documentsApi.upload relies on
+// Content-Type: undefined.
+api.interceptors.request.use(
+  (config) => {
+    const token = getToken();
+    if (token) {
+      config.headers.set('Authorization', `Bearer ${token}`);
+    }
+    return config;
+  },
+  (error: AxiosError) => Promise.reject(error)
+);
+
 // Response interceptor - enhanced error handling
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error: AxiosError) => {
+    // Session expired or revoked: drop the stored token and
+    // send the user to the login page. Skip the redirect when
+    // already on an auth page to avoid redirect loops.
+    if (error.response?.status === 401) {
+      clearToken();
+      const { pathname } = window.location;
+      if (pathname !== '/login' && pathname !== '/register') {
+        window.location.replace('/login');
+      }
+    }
+
     // Log detailed error info in development
     if (import.meta.env.DEV) {
       console.error('API Error:', {
