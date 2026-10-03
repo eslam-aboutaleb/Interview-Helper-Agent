@@ -64,11 +64,28 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware - origins configurable via environment
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:80,http://localhost:5173")
+# CORS middleware - origins configurable via environment.
+# Credentials are enabled, so the origin list must be explicit:
+# a "*" wildcard would let any site read credentialed responses
+# (Starlette echoes the Origin back with credentials), so refuse
+# to start with an insecure configuration instead.
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:80,http://localhost:5173").split(",")
+    if origin.strip()
+]
+if "*" in cors_origins:
+    message = (
+        "CORS_ORIGINS contains '*' while credentials are enabled. "
+        "This lets any site read credentialed responses. Set "
+        "CORS_ORIGINS to an explicit comma-separated list of origins."
+    )
+    if os.getenv("ENVIRONMENT") == "production":
+        raise RuntimeError(message)
+    logger.warning("INSECURE CORS CONFIGURATION: %s", message)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in cors_origins.split(",") if origin.strip()],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,6 +102,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 @app.get("/")
 async def root():
+    """Return basic API information and the current version."""
     return {"message": "Interview Prep Platform API", "version": "1.0.0"}
 
 

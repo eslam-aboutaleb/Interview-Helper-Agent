@@ -13,13 +13,13 @@ under-target modules, and add a `--cov-fail-under=90` gate to `pytest.ini`.
 
 Latest coverage report (397 tests, 97% total):
 
-| Module | Coverage |
-| ------ | -------- |
-| `database.py` | 87% |
-| `services/document_service.py` | 88% |
-| `backend/models.py` | 89% |
-| `services/llm_service.py` | 91% |
-| `main.py` | 91% |
+| Module                         | Coverage |
+| ------------------------------ | -------- |
+| `database.py`                  | 87%      |
+| `services/document_service.py` | 88%      |
+| `backend/models.py`            | 89%      |
+| `services/llm_service.py`      | 91%      |
+| `main.py`                      | 91%      |
 
 All other modules are ≥97%.
 

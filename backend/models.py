@@ -118,6 +118,7 @@ class UserDocument(Base):
 
     @validates("document_type")
     def validate_document_type(self, key, value):
+        """Restrict the document type to ``resume`` or ``jd``."""
         valid = {"resume", "jd"}
         value = str(value).strip().lower()
         if value not in valid:

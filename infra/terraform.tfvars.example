@@ -5,8 +5,8 @@ aws_region   = "eu-north-1"
 environment  = "prod"
 instance_type = "t3.medium"
 
-# Restrict SSH to your IP instead of 0.0.0.0/0
-allowed_ssh_cidr = "0.0.0.0/0"
+# Restrict SSH to your IP instead of 0.0.0.0/0 (empty string disables SSH)
+allowed_ssh_cidr = "203.0.113.10/32"
 
 # Name of an existing EC2 key pair (leave empty to use SSM instead)
 key_name = ""
@@ -23,8 +23,8 @@ db_password = "change-me-in-production"
 # Pass the Gemini key through TF_VAR_gemini_api_key or a tfvars file.
 gemini_api_key = ""
 
-# Comma-separated allowed CORS origins
-cors_origins = "*"
+# Comma-separated allowed CORS origins (explicit origins only, no "*")
+cors_origins = "https://example.com"
 
 # Optional: custom domain (requires hosted_zone_id)
 domain_name    = ""

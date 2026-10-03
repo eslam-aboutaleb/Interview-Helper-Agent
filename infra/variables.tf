@@ -107,9 +107,9 @@ variable "gemini_api_key" {
 }
 
 variable "cors_origins" {
-  description = "Comma-separated list of allowed CORS origins"
+  description = "Comma-separated list of allowed CORS origins. Must be explicit (no \"*\") because the backend enables credentials."
   type        = string
-  default     = "*"
+  default     = "http://localhost:80,http://localhost:5173"
 }
 
 variable "log_level" {

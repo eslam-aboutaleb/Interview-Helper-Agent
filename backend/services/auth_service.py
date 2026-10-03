@@ -14,8 +14,6 @@ from models import User, UserSession
 
 logger = logging.getLogger(__name__)
 
-# In production this should be a strong random value stored in a secret manager.
-_SECRET = os.getenv("AUTH_SECRET", "change-me-in-production").encode()
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
 
 VALID_ROLES = {"user", "admin"}

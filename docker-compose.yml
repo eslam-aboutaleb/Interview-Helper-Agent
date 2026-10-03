@@ -31,7 +31,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_FALLBACK_MODELS: ${LLM_FALLBACK_MODELS:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Explicit origins only: a "*" default is incompatible with the
+      # credentials the backend enables (see main.py CORS validation).
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:80,http://localhost:5173}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - '${BACKEND_PORT:-8000}:8000'

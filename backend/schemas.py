@@ -4,6 +4,13 @@ from datetime import datetime
 
 
 class QuestionBase(BaseModel):
+    """Shared fields for creating and updating interview questions.
+
+    Declares the common validation rules (length limits, allowed
+    characters, difficulty range) that the create and update schemas
+    inherit.
+    """
+
     job_title: str = Field(
         ..., min_length=2, max_length=100, description="Job title for the question", example="Senior Software Engineer"
     )
@@ -357,6 +364,7 @@ class UserCreate(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, v: str) -> str:
+        """Normalize the email to lowercase and require an ``@``."""
         v = v.strip().lower()
         if "@" not in v:
             raise ValueError("email must contain @")
@@ -372,6 +380,7 @@ class UserLogin(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, v: str) -> str:
+        """Normalize the email to lowercase."""
         return v.strip().lower()
 
 
@@ -452,6 +461,7 @@ class UserDocumentCreate(BaseModel):
     @field_validator("document_type")
     @classmethod
     def validate_document_type(cls, v: str) -> str:
+        """Restrict the document type to ``resume`` or ``jd``."""
         v = v.strip().lower()
         if v not in {"resume", "jd"}:
             raise ValueError("document_type must be 'resume' or 'jd'")
@@ -493,6 +503,7 @@ class InterviewSessionCreate(BaseModel):
     @field_validator("session_type")
     @classmethod
     def validate_session_type(cls, v: str) -> str:
+        """Restrict the session type to technical, behavioral, or mixed."""
         v = v.strip().lower()
         if v not in {"technical", "behavioral", "mixed"}:
             raise ValueError("session_type must be 'technical', 'behavioral', or 'mixed'")
@@ -572,6 +583,7 @@ class ModelAnswerRequest(BaseModel):
     @field_validator("question_type")
     @classmethod
     def validate_question_type(cls, v: str) -> str:
+        """Restrict the question type to technical or behavioral."""
         v = v.strip().lower()
         if v not in {"technical", "behavioral"}:
             raise ValueError("question_type must be 'technical' or 'behavioral'")

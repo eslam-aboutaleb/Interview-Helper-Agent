@@ -26,8 +26,8 @@ the Stats page with Recharts (radar, bar, line, area).
    - `difficulty_distribution`: `{1: n, 2: n, ...}` or list of `{difficulty, count}`
    - `questions_by_type` already exists — keep
    - `average_score_trend` per week (last 8 weeks) if evaluation data exists
-   Use efficient SQL (`func.date_trunc` / `func.count` group-bys), not
-   Python-side loops over full tables.
+     Use efficient SQL (`func.date_trunc` / `func.count` group-bys), not
+     Python-side loops over full tables.
 2. **Backend tests** — extend `tests/test_stats_api.py`: empty-database shape,
    seeded data aggregation correctness, date-bucketing boundaries.
 3. **Frontend** — `npm install recharts` (via node container, commit
@@ -36,7 +36,7 @@ the Stats page with Recharts (radar, bar, line, area).
    - `BarChart` of difficulty distribution
    - `AreaChart` of signups + evaluations over 7 days
    - `LineChart` of average score trend (hide gracefully when no data)
-   Keep the existing StatCards; charts go below with the same card styling.
+     Keep the existing StatCards; charts go below with the same card styling.
 4. Handle the empty state (no evaluations yet) with `EmptyState`, not a blank
    chart.
 

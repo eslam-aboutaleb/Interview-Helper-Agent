@@ -13,6 +13,7 @@ the gap analysis).
 ## Context
 
 Backend already exposes (all behind `get_current_user`):
+
 - `POST /api/documents/upload?document_type=resume|jd` (multipart file)
 - `GET /api/documents/?document_type=` — list
 - `DELETE /api/documents/{id}`

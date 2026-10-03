@@ -93,6 +93,17 @@ class TestUploadDocument:
         )
         assert response.status_code == 400
 
+    def test_upload_file_too_large(self, client):
+        user = register(client)
+        # One byte over the 10MB backend limit.
+        content = b"x" * (10 * 1024 * 1024 + 1)
+        response = client.post(
+            "/api/documents/upload?document_type=resume",
+            files={"file": ("big.txt", io.BytesIO(content), "text/plain")},
+            headers=auth_headers(user["token"]),
+        )
+        assert response.status_code == 413
+
     def test_upload_unextractable_pdf(self, client):
         user = register(client)
         # Not a real PDF: PyPDF2 will fail to parse it.

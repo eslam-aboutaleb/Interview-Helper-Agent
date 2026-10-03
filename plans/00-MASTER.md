@@ -60,35 +60,35 @@ Wave 3 (unscheduled backlog, documentation only)
 
 ## Wave table & suggested agent assignment
 
-| Wave | Plan | Title | Depends on | Parallel-safe with |
-| ---- | ---- | ----- | ---------- | ------------------ |
-| 0 | 01 | Dependency upgrades & vulnerability remediation | — | — (run alone) |
-| 1 | 02 | CI/CD pipeline (GitHub Actions) | 01 | 03, 04, 05 |
-| 1 | 03 | Alembic migrations | 01 | 02, 04, 05 |
-| 1 | 04 | Dev environment fixes | — (can start immediately) | 02, 03, 05 |
-| 1 | 05 | Backend coverage gaps → ≥90%/module | 01 | 02, 03, 04 |
-| 2 | 06 | Skill-gap & documents frontend | — | 07, 09 (not 08: both edit `App.tsx`) |
-| 2 | 07 | Charts dashboard + stats time series | 01 | 06, 09 (not 08: both edit `schemas.py`) |
-| 2 | 08 | Company-specific mode + learning plan | 01 | run after 06 and 07 land (touches `App.tsx`, `schemas.py`, `models.py`, `routes/questions.py`) |
-| 2 | 09 | Full-text search + import/export | 01 | 06, 07 (not 08: both edit `routes/questions.py`) |
-| 3 | 10 | P2 backlog (voice, RAG, code exec, gamification, OAuth) | — | documentation only |
+| Wave | Plan | Title                                                   | Depends on                | Parallel-safe with                                                                             |
+| ---- | ---- | ------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------- |
+| 0    | 01   | Dependency upgrades & vulnerability remediation         | —                         | — (run alone)                                                                                  |
+| 1    | 02   | CI/CD pipeline (GitHub Actions)                         | 01                        | 03, 04, 05                                                                                     |
+| 1    | 03   | Alembic migrations                                      | 01                        | 02, 04, 05                                                                                     |
+| 1    | 04   | Dev environment fixes                                   | — (can start immediately) | 02, 03, 05                                                                                     |
+| 1    | 05   | Backend coverage gaps → ≥90%/module                     | 01                        | 02, 03, 04                                                                                     |
+| 2    | 06   | Skill-gap & documents frontend                          | —                         | 07, 09 (not 08: both edit `App.tsx`)                                                           |
+| 2    | 07   | Charts dashboard + stats time series                    | 01                        | 06, 09 (not 08: both edit `schemas.py`)                                                        |
+| 2    | 08   | Company-specific mode + learning plan                   | 01                        | run after 06 and 07 land (touches `App.tsx`, `schemas.py`, `models.py`, `routes/questions.py`) |
+| 2    | 09   | Full-text search + import/export                        | 01                        | 06, 07 (not 08: both edit `routes/questions.py`)                                               |
+| 3    | 10   | P2 backlog (voice, RAG, code exec, gamification, OAuth) | —                         | documentation only                                                                             |
 
 ## File ownership matrix (wave 2)
 
-| File | 06 | 07 | 08 | 09 |
-| ---- | -- | -- | -- | -- |
-| `frontend/src/services/api.ts` | ✏️ | — | — | ✏️ |
-| `frontend/src/types/index.ts` | ✏️ | ✏️ | ✏️ | ✏️ |
-| `frontend/src/App.tsx` | ✏️ | — | ✏️ | — |
-| `frontend/src/pages/Stats.tsx` | — | ✏️ | — | — |
-| `frontend/src/pages/Questions.tsx` | — | — | ✏️ (company filter) | ✏️ (search box) |
-| `backend/routes/stats.py` | — | ✏️ | — | — |
-| `backend/schemas.py` | — | ✏️ (StatsResponse) | ✏️ (append new classes) | — |
-| `backend/models.py` | — | — | ✏️ (Question.company) | — |
-| `backend/routes/questions.py` | — | — | ✏️ (company filter) | ✏️ (search + export/import) |
-| `backend/services/learning_plan.py` | — | — | ✏️ (new) | — |
-| `backend/routes/learning.py` | — | — | ✏️ (new) | — |
-| `frontend/package.json` | — | ✏️ (recharts) | — | — |
+| File                                | 06  | 07                 | 08                      | 09                          |
+| ----------------------------------- | --- | ------------------ | ----------------------- | --------------------------- |
+| `frontend/src/services/api.ts`      | ✏️  | —                  | —                       | ✏️                          |
+| `frontend/src/types/index.ts`       | ✏️  | ✏️                 | ✏️                      | ✏️                          |
+| `frontend/src/App.tsx`              | ✏️  | —                  | ✏️                      | —                           |
+| `frontend/src/pages/Stats.tsx`      | —   | ✏️                 | —                       | —                           |
+| `frontend/src/pages/Questions.tsx`  | —   | —                  | ✏️ (company filter)     | ✏️ (search box)             |
+| `backend/routes/stats.py`           | —   | ✏️                 | —                       | —                           |
+| `backend/schemas.py`                | —   | ✏️ (StatsResponse) | ✏️ (append new classes) | —                           |
+| `backend/models.py`                 | —   | —                  | ✏️ (Question.company)   | —                           |
+| `backend/routes/questions.py`       | —   | —                  | ✏️ (company filter)     | ✏️ (search + export/import) |
+| `backend/services/learning_plan.py` | —   | —                  | ✏️ (new)                | —                           |
+| `backend/routes/learning.py`        | —   | —                  | ✏️ (new)                | —                           |
+| `frontend/package.json`             | —   | ✏️ (recharts)      | —                       | —                           |
 
 **Rule:** if two plans claim ✏️ on the same file, run them sequentially in the
 order listed in the wave table, or have the agents hand off the file.

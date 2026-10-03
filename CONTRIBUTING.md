@@ -25,14 +25,14 @@ Every pull request must pass the following GitHub Actions
 jobs (`.github/workflows/ci.yml` and
 `.github/workflows/pre-commit.yml`):
 
-| Job | What it checks |
-| --- | --- |
-| `lint-backend` | `ruff check` and `ruff format --check` on `backend/` |
-| `lint-frontend` | `prettier --check` on `src/**` and a full `tsc + vite build` |
-| `test` | `pytest` with a coverage gate: total coverage must be `>= 90%` |
-| `docker` | `docker compose build` succeeds for both images |
+| Job                 | What it checks                                                          |
+| ------------------- | ----------------------------------------------------------------------- |
+| `lint-backend`      | `ruff check` and `ruff format --check` on `backend/`                    |
+| `lint-frontend`     | `prettier --check` on `src/**` and a full `tsc + vite build`            |
+| `test`              | `pytest` with a coverage gate: total coverage must be `>= 90%`          |
+| `docker`            | `docker compose build` succeeds for both images                         |
 | `dependency-review` | Flags PRs that introduce vulnerable or license-conflicting dependencies |
-| `pre-commit` | Runs the hooks from `.pre-commit-config.yaml` (ruff, prettier, hygiene) |
+| `pre-commit`        | Runs the hooks from `.pre-commit-config.yaml` (ruff, prettier, hygiene) |
 
 ### Running the gates locally
 

@@ -13,6 +13,7 @@ analysis. No code in this plan.
 ## Items
 
 ### 10.1 Voice mode (Whisper STT + TTS)
+
 - **Value:** spoken mock interviews.
 - **Approach:** browser `MediaRecorder` → upload audio to
   `POST /api/interviews/sessions/{id}/answer` (add `audio` part); backend
@@ -23,6 +24,7 @@ analysis. No code in this plan.
 - **Risks:** latency, cost, PII in audio — add an explicit consent flag.
 
 ### 10.2 RAG-grounded question generation
+
 - **Value:** questions cite real role/JD context instead of model priors.
 - **Approach:** embed a curated question bank with `pgvector` (Postgres
   extension) or FAISS; retrieve top-k similar questions as few-shot context
@@ -33,6 +35,7 @@ analysis. No code in this plan.
 - **Risks:** embedding model choice; index rebuild cost.
 
 ### 10.3 Code execution sandbox
+
 - **Value:** verify coding-interview answers.
 - **Approach:** call Piston (self-hosted container) or Judge0 API from a new
   `POST /api/interviews/run-code` endpoint; stream stdout/stderr/exit code.
@@ -42,12 +45,14 @@ analysis. No code in this plan.
   CPU/memory limits.
 
 ### 10.4 Gamification (XP, streaks, leaderboards)
+
 - **Value:** retention.
 - **Approach:** `user_progress` table (XP per evaluation score, daily streak
   counters), badge definitions, optional leaderboard endpoint (opt-in).
 - **Deps:** new model + migration (Plan 03), APScheduler for streak resets.
 
 ### 10.5 OAuth (Google/GitHub) + account security
+
 - **Value:** passwordless login, social sign-in.
 - **Approach:** `authlib` OAuth2 client; link OAuth identities to existing
   accounts by verified email; add refresh-token rotation, password reset, and
@@ -58,6 +63,7 @@ analysis. No code in this plan.
   email before linking.
 
 ### 10.6 Scheduling (APScheduler)
+
 - **Value:** daily practice questions, session cleanup.
 - **Approach:** background scheduler in the backend container; jobs: daily
   question email, expired-session cleanup, evaluation retention policy.

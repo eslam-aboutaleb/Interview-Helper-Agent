@@ -152,6 +152,7 @@ class InterviewService:
         }
 
     def get_session(self, db: Session, session_id: int, user_id: int) -> Optional[InterviewSession]:
+        """Return a session owned by ``user_id``, or ``None`` if it does not exist."""
         return (
             db.query(InterviewSession)
             .filter(InterviewSession.id == session_id, InterviewSession.user_id == user_id)
@@ -159,6 +160,7 @@ class InterviewService:
         )
 
     def list_sessions(self, db: Session, user_id: int, limit: int = 50) -> list[InterviewSession]:
+        """Return a user's sessions, most recent first."""
         return (
             db.query(InterviewSession)
             .filter(InterviewSession.user_id == user_id)
@@ -267,6 +269,7 @@ class InterviewService:
 
         # Deduplicate while preserving order.
         def dedupe(items: list[str]) -> list[str]:
+            """Return ``items`` with duplicates removed, order preserved."""
             seen: set[str] = set()
             out: list[str] = []
             for item in items:

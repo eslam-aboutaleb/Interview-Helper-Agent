@@ -41,7 +41,11 @@ def _validate_database_url(database_url: str) -> str:
     is_production = os.getenv("ENVIRONMENT") == "production"
 
     if is_production:
-        if "password@localhost" in database_url or "postgres:password" in database_url:
+        # Reject the well-known default credentials that compose
+        # files and tutorials ship with. Any of these in production
+        # means the operator forgot to set real credentials.
+        default_creds = ("password@localhost", "postgres:password", "postgres:postgres")
+        if any(cred in database_url for cred in default_creds):
             raise DatabaseConfigError(
                 "DATABASE_URL contains default credentials. "
                 "Please update with actual credentials from environment variables."

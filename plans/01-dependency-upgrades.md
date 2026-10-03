@@ -40,8 +40,8 @@ Frontend uses `^` ranges but has not had an `npm audit` pass.
    the team wants one).
 3. Frontend: run `npm audit` inside the node container
    (`docker run --rm -v "$PWD/frontend:/app" -w /app node:20-alpine
-   sh -c "npm ci && npm audit"`), then `npm update` + targeted `npm install
-   <pkg>@latest` for vulnerable packages (axios, react-router-dom, etc.).
+sh -c "npm ci && npm audit"`), then `npm update` + targeted `npm install
+<pkg>@latest` for vulnerable packages (axios, react-router-dom, etc.).
    Commit the updated `package.json` **and** `package-lock.json` together.
 4. Rebuild and verify (see below). Fix any deprecation warnings that fail
    tests (e.g. FastAPI `regex=` → `pattern=` in `Query(...)` — check

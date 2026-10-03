@@ -75,6 +75,7 @@ class LLMService:
     # ------------------------------------------------------------------
     @property
     def litellm(self) -> Any:
+        """Lazily import and cache the ``litellm`` module."""
         if self._litellm is None:
             try:
                 import litellm

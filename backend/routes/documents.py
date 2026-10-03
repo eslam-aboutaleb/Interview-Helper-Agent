@@ -16,6 +16,10 @@ from services import document_service
 
 router = APIRouter()
 
+# Reject uploads larger than this even if a proxy did not.
+# Matches the nginx ``client_max_body_size`` of 10m.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
 
 @router.post("/upload", response_model=UserDocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
@@ -31,6 +35,11 @@ async def upload_document(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty",
+        )
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit",
         )
 
     text = document_service.extract_text(filename, file_bytes)

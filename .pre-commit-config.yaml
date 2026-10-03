@@ -20,7 +20,23 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        exclude: |
+          (?x)^(
+            docker-compose.*\.yml|
+            .*/docker-compose.*\.yml
+          )
+        # docker-compose*.yml use Compose-specific YAML tags
+        # (e.g. `ports: !override`) that PyYAML's safe_load
+        # cannot parse; they are validated by `docker compose
+        # config` in CI instead.
       - id: check-json
+        exclude: |
+          (?x)^(
+            .*/tsconfig\.json|
+            tsconfig\.json
+          )
+        # tsconfig.json is JSONC by design (TypeScript requires
+        # comment support), so strict json.load rejects it.
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1000]

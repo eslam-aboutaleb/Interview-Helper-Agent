@@ -38,7 +38,7 @@ personalized study plan from the user's skill gaps and weak areas.
      gather skill gaps (latest resume-vs-JD analysis if available), weakest
      question types (from `AnswerEvaluation` averages), and produce a
      structured plan: list of `{topic, reason, recommended_question_ids,
-     priority, estimated_hours}`. LLM call via `LLMService` with a
+priority, estimated_hours}`. LLM call via `LLMService` with a
      **deterministic heuristic fallback** (no LLM key configured → rule-based
      plan from the same data), following the `evaluation_service.py` pattern.
    - New `routes/learning.py`: `GET /api/learning/plan` (auth required) and

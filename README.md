@@ -1,314 +1,307 @@
-# LLM-Based Interview Prep Platform v1.0
+# LLM-Based Interview Prep Platform
 
-A comprehensive AI-powered interview preparation platform that generates personalized interview questions using Google's Gemini AI, with full question management, organization, and statistics tracking capabilities.
-
-## Quick Start
-
-1. **Clone and Setup**
-
-   ```bash
-   git clone <repository-url>
-   cd interview-prep-platform
-   cp .env.example .env
-   ```
-
-2. **Configure Environment**
-   - Edit `.env` file and add your Gemini API key:
-
-   ```
-   GEMINI_API_KEY=your-actual-gemini-api-key
-   ```
-
-3. **Run with Docker Compose**
-
-   ```bash
-   docker-compose up --build
-   ```
-
-4. **Access the Application**
-   - Frontend: http://localhost:80
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
+A comprehensive AI-powered interview preparation platform that generates personalized interview questions through a **provider-agnostic LLM layer** (Gemini, OpenAI, Anthropic, Groq, or local models), with full question management, full-text search, import/export, resume skill-gap analysis, mock interviews, and a statistics dashboard.
 
 ## Features
 
-### Core Functionality
+### AI & Question Intelligence
 
-- **AI Question Generation**: Generate tailored interview questions using Google Gemini AI
-- **Job Title Targeting**: Questions customized for specific roles (Software Engineer, Data Scientist, etc.)
-- **Question Types**: Support for both technical and behavioral questions
-- **Question Management**: Save, organize, edit, and delete questions
-- **Rating & Flagging**: Rate difficulty and flag questions for review
-- **Question Sets**: Create and manage collections of questions
-- **Statistics Dashboard**: Track preparation progress with detailed analytics
+- **Provider-agnostic question generation** — every LLM call routes through a single LiteLLM-backed service; switch providers with the `LLM_MODEL` env var, no code changes
+- **Fallback model chain** — a primary model plus configurable fallbacks (`LLM_FALLBACK_MODELS`) degrade gracefully during provider outages
+- **Robust response parsing** — JSON-first parsing with a plain-text fallback, markdown-fence cleanup, and per-field validation/clamping
+- **Job-title targeting** — questions customized for specific roles (Software Engineer, Data Scientist, etc.)
+- **Question types** — technical, behavioral, and mixed questions with a 1–5 difficulty scale
 
-### Technical Features
+### Question Management
 
-- **RESTful API**: Complete FastAPI backend with OpenAPI documentation
-- **Real-time Updates**: Dynamic question generation and management
-- **Responsive Design**: Mobile-first design that works on all devices
-- **Data Persistence**: PostgreSQL database with proper schema design
-- **Containerization**: Full Docker Compose setup for easy deployment
-- **Error Handling**: Comprehensive error handling and validation
+- **Full CRUD** — create, read, update, and delete questions
+- **Full-text search** — Postgres `tsvector`/`websearch_to_tsquery` with relevance ranking, and a case-insensitive `ILIKE` fallback on other dialects (SQLite in tests)
+- **Filtering & pagination** — by job title, question type, flagged status; offset/limit pagination
+- **Import / export** — bulk JSON import with per-entry validation (bad rows are skipped, not fatal) and streaming JSON/CSV export
+- **Spreadsheet-injection protection** — CSV cells starting with `=`, `+`, `-`, `@`, tab, or CR are neutralized
+- **Question sets** — group questions into named collections
+- **Rating & flagging** — rate difficulty (1.0–5.0) and flag questions for review
+
+### Documents & Skill Gap
+
+- **Resume / JD upload** — multipart upload with skill, experience, and contact parsing
+- **Skill-gap analysis** — compare a resume against a job description to surface matched, missing, and extra skills with a match percentage
+
+### Mock Interviews
+
+- **Interview sessions** — multi-turn mock interviews with configurable type and difficulty
+- **Adaptive difficulty** — target difficulty adjusts based on evaluated performance
+- **Transcripts & evaluations** — per-session message history and scored answer evaluations
+
+### Analytics & Administration
+
+- **Statistics dashboard** — totals, type/job-title breakdowns, difficulty distribution, plus dense time series (daily signups, daily evaluations, weekly score trend) that back the charts
+- **Auth & roles** — register/login with Bearer session tokens, PBKDF2-HMAC-SHA256 password hashing, `user`/`admin` roles
+- **Admin panel** — user listing/deletion, platform stats, global action history, flagged-question review
 
 ## Architecture
 
-### Frontend (React SPA)
-
 ```
-frontend/
-├── src/
-│   ├── components/     # Reusable UI components
-│   ├── pages/         # Main application pages
-│   ├── services/      # API service layer
-│   └── App.js         # Main application component
-├── public/            # Static assets
-└── Dockerfile         # Frontend container configuration
-```
-
-### Backend (FastAPI)
-
-```
-backend/
-├── routes/            # API route handlers
-│   ├── questions.py   # Question management endpoints
-│   └── stats.py       # Statistics endpoints
-├── services/          # Business logic services
-│   └── gemini_service.py  # AI question generation
-├── models.py          # Database models
-├── schemas.py         # Pydantic schemas for validation
-├── database.py        # Database configuration
-└── main.py           # FastAPI application entry point
-```
-
-### Database (PostgreSQL)
-
-```
-db/
-└── init.sql          # Database schema and sample data
-```
-
-## API Endpoints
-
-### Questions
-
-- `POST /api/questions/generate` - Generate new questions using AI
-- `GET /api/questions/` - List questions with filtering options
-- `GET /api/questions/{id}` - Get specific question
-- `POST /api/questions/` - Create question manually
-- `PUT /api/questions/{id}` - Update question
-- `DELETE /api/questions/{id}` - Delete question
-- `POST /api/questions/sets` - Create question set
-- `GET /api/questions/sets/` - List question sets
-- `POST /api/questions/rate` - Rate a question
-- `GET /api/questions/job-titles/` - Get available job titles
-
-### Statistics
-
-- `GET /api/stats/` - Get platform statistics
-
-### System
-
-- `GET /` - API information
-- `GET /health` - Health check endpoint
-
-## Database Schema
-
-### Questions Table
-
-```sql
-CREATE TABLE questions (
-    id SERIAL PRIMARY KEY,
-    job_title VARCHAR(255) NOT NULL,
-    question_text TEXT NOT NULL,
-    question_type VARCHAR(50) NOT NULL, -- 'technical' or 'behavioral'
-    difficulty INTEGER DEFAULT 1,       -- 1-5 scale
-    is_flagged BOOLEAN DEFAULT FALSE,
-    tags VARCHAR(500),                  -- Comma-separated tags
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE
-);
+interview-helper/
+├── backend/                 # FastAPI application
+│   ├── main.py              # App factory, CORS, router wiring, lifespan
+│   ├── database.py          # Engine, pooling, URL validation, get_db
+│   ├── deps.py              # Auth dependencies (current/optional/admin user)
+│   ├── models.py            # SQLAlchemy ORM models (source of truth)
+│   ├── schemas.py           # Pydantic request/response schemas
+│   ├── routes/              # API route handlers
+│   │   ├── questions.py     # Question CRUD, search, import/export, sets, rating
+│   │   ├── stats.py         # Aggregated statistics + time series
+│   │   ├── documents.py     # Document upload, skill-gap
+│   │   ├── interviews.py    # Mock-interview sessions, messages, evaluations
+│   │   ├── auth.py          # Register, login, logout, me, history
+│   │   └── admin.py         # Admin-only user/question/history management
+│   ├── services/            # Business logic
+│   │   ├── llm_service.py   # Provider-agnostic LiteLLM client + fallback chain
+│   │   ├── gemini_service.py# Question generation (routes through LLMService)
+│   │   ├── interview_service.py
+│   │   ├── evaluation_service.py
+│   │   ├── document_service.py
+│   │   ├── auth_service.py  # Password hashing, session tokens, roles
+│   │   └── history_service.py
+│   ├── alembic/             # Database migrations
+│   ├── tests/               # pytest suite (522 tests)
+│   └── Dockerfile           # Non-root, venv, gunicorn+uvicorn workers
+├── frontend/                # React SPA (TypeScript + Vite)
+│   ├── src/
+│   │   ├── pages/           # Dashboard, Questions, Generate, Interview,
+│   │   │                    # Stats, Documents, SkillGap, QuestionSets
+│   │   ├── components/      # Reusable UI (cards, alerts, error boundary)
+│   │   ├── services/api.ts  # Typed API client
+│   │   └── types/index.ts   # Shared TypeScript types
+│   ├── nginx.conf           # Production reverse proxy (serves /api to backend)
+│   └── Dockerfile           # Multi-stage build, non-root nginx user
+├── db/init.sql              # Legacy provisioning script (comments only; not mounted)
+├── docker-compose.yml       # Development stack (hot reload)
+├── docker-compose.dev.yml   # Bind-mount overrides for live reload
+├── docker-compose.prod.yml  # Production stack (container-DB or RDS modes)
+└── infra/                   # Terraform (EC2, RDS, ALB, security groups)
 ```
 
-### Question Sets Table
+### Frontend
 
-```sql
-CREATE TABLE question_sets (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    job_title VARCHAR(255) NOT NULL,
-    question_ids TEXT,                  -- JSON array of question IDs
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE
-);
-```
+- **React 19 + TypeScript**, built with **Vite**
+- **TanStack Query** for server state, **React Router** for routing
+- **Tailwind CSS** for styling, **Recharts** for the dashboard charts
+- Served in production by **nginx**, which proxies `/api` to the backend
 
-### User Ratings Table
+### Backend
 
-```sql
-CREATE TABLE user_ratings (
-    id SERIAL PRIMARY KEY,
-    question_id INTEGER NOT NULL,
-    rating DECIMAL(2,1) NOT NULL,       -- 1.0-5.0 scale
-    feedback TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-```
+- **FastAPI** with automatic OpenAPI docs (`/docs`)
+- **SQLAlchemy 2** ORM + **Alembic** migrations
+- **LiteLLM** for provider-agnostic LLM calls
+- **Gunicorn** with **Uvicorn** workers in production
 
-## Gemini AI Integration
+### Database
 
-The platform integrates with Google's Gemini AI for intelligent question generation:
+- **PostgreSQL 15** in Docker/production; **SQLite** in the test suite
+- Connection pooling (`QueuePool`, pre-ping, recycle) for server DBs; `NullPool` for SQLite
+- Models in `backend/models.py` are the source of truth; Alembic owns the schema
 
-- **Smart Prompting**: Context-aware prompts based on job title and question type
-- **Structured Output**: AI responses are parsed and validated
-- **Fallback System**: Mock questions when AI is unavailable
-- **Error Handling**: Graceful degradation with fallback responses
-
-### Setting Up Gemini API
-
-1. Get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Add it to your `.env` file as `GEMINI_API_KEY=your-key-here`
-3. Restart the backend service
-
-## Docker Setup
-
-The application uses Docker Compose for easy development and deployment:
-
-### Services
-
-- **Frontend**: React development server (port 80)
-- **Backend**: FastAPI with hot reload (port 8000)
-- **Database**: PostgreSQL 15 (port 5432)
-
-### Volumes
-
-- `postgres_data`: Persistent database storage
-- Source code volumes for hot reload during development
-
-### Health Checks
-
-- Database health check ensures backend starts only after DB is ready
-- Backend health endpoint for monitoring
-
-## 🔧 Development
+## Quick Start (Docker)
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Node.js 18+ (for local frontend development)
-- Python 3.11+ (for local backend development)
+- Docker and Docker Compose v2
+- An LLM provider API key (e.g. Gemini) for question generation
 
-### Local Development Setup
-
-1. **Backend Development**
-
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   uvicorn main:app --reload
-   ```
-
-2. **Frontend Development**
-
-   ```bash
-   cd frontend
-   npm install
-   npm start
-   ```
-
-3. **Database Setup**
-   ```bash
-   docker-compose up db -d
-   ```
-
-### Environment Variables
-
-- `GEMINI_API_KEY`: Google Gemini API key for AI question generation
-- `DATABASE_URL`: PostgreSQL connection string
-- `REACT_APP_API_URL`: Backend API URL for frontend
-
-## Usage Examples
-
-### Generating Questions
+### Run the stack
 
 ```bash
-curl -X POST "http://localhost:8000/api/questions/generate" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "job_title": "Software Engineer",
-       "count": 5,
-       "question_type": "mixed"
-     }'
+git clone <repository-url>
+cd interview-helper
+
+# Copy and configure the environment
+cp .env.example .env   # or create .env manually
+# Edit .env: set GEMINI_API_KEY (or another provider key + LLM_MODEL)
+
+# Start the development stack
+docker compose -f docker-compose.yml up --build
 ```
 
-### Getting Statistics
+### Access
+
+| Service            | URL                        |
+| ------------------ | -------------------------- |
+| Frontend           | http://localhost           |
+| Backend API        | http://localhost:8000      |
+| API docs (Swagger) | http://localhost:8000/docs |
+| Database           | localhost:5432             |
+
+### Development mode (live reload)
 
 ```bash
-curl "http://localhost:8000/api/stats/"
+# Backend on :8000 with --reload, frontend Vite dev server on :5173 with HMR
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-### Filtering Questions
+## Configuration
+
+All configuration comes from environment variables (see `.env`). Nothing is hardcoded.
+
+### Database
+
+| Variable       | Default                                                 | Description                          |
+| -------------- | ------------------------------------------------------- | ------------------------------------ |
+| `DATABASE_URL` | `postgresql://postgres:postgres@db:5432/interview_prep` | SQLAlchemy connection URL (required) |
+| `DB_NAME`      | `interview_prep`                                        | Postgres database name               |
+| `DB_USER`      | `postgres`                                              | Postgres user                        |
+| `DB_PASSWORD`  | (required in prod)                                      | Postgres password                    |
+| `DB_PORT`      | `5432`                                                  | Host port for Postgres               |
+
+### Application
+
+| Variable            | Default                                     | Description                                 |
+| ------------------- | ------------------------------------------- | ------------------------------------------- |
+| `BACKEND_PORT`      | `8000`                                      | Host port for the backend                   |
+| `FRONTEND_PORT`     | `80`                                        | Host port for the frontend (prod)           |
+| `FRONTEND_DEV_PORT` | `5173`                                      | Host port for the Vite dev server           |
+| `CORS_ORIGINS`      | `http://localhost:80,http://localhost:5173` | Comma-separated allowed origins             |
+| `LOG_LEVEL`         | `INFO`                                      | Logging verbosity                           |
+| `ENVIRONMENT`       | (unset)                                     | Set to `production` to enable strict checks |
+
+> **CORS:** the backend enables credentials, so `CORS_ORIGINS` must be an explicit comma-separated list — a `*` wildcard is rejected at startup.
+
+### LLM
+
+| Variable              | Default                                                  | Description                    |
+| --------------------- | -------------------------------------------------------- | ------------------------------ |
+| `LLM_MODEL`           | `gemini/gemini-1.5-flash`                                | Primary model (LiteLLM name)   |
+| `LLM_FALLBACK_MODELS` | `openai/gpt-4o-mini,anthropic/claude-3-5-haiku-20241022` | Comma-separated fallback chain |
+| `LLM_TIMEOUT`         | `60`                                                     | Per-request timeout (seconds)  |
+| `LLM_MAX_RETRIES`     | `2`                                                      | Provider retries               |
+| `LLM_TEMPERATURE`     | `0.7`                                                    | Sampling temperature           |
+| `GEMINI_API_KEY`      | —                                                        | Gemini provider key            |
+
+Provider keys are read from the standard env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `COHERE_API_KEY`, `AZURE_API_KEY`, `VERTEX_AI_PROJECT_ID`, `AWS_ACCESS_KEY_ID`). Local providers (`ollama`) need no key.
+
+### Auth
+
+| Variable            | Default | Description            |
+| ------------------- | ------- | ---------------------- |
+| `SESSION_TTL_HOURS` | `24`    | Session token lifetime |
+
+## API Endpoints
+
+All routes are mounted under `/api`. Authentication uses `Authorization: Bearer <token>` where required; most read endpoints work anonymously.
+
+### Questions — `/api/questions`
+
+| Method | Path           | Auth     | Description                                  |
+| ------ | -------------- | -------- | -------------------------------------------- |
+| POST   | `/generate`    | optional | Generate questions with the LLM              |
+| GET    | `/`            | public   | List/search/filter questions (paginated)     |
+| GET    | `/export`      | public   | Export as JSON or CSV (`?format=json\|csv`)  |
+| POST   | `/import`      | optional | Bulk-import questions (per-entry validation) |
+| GET    | `/{id}`        | optional | Get one question                             |
+| POST   | `/`            | optional | Create a question manually                   |
+| PUT    | `/{id}`        | optional | Update a question                            |
+| DELETE | `/{id}`        | optional | Delete a question                            |
+| POST   | `/sets`        | public   | Create a question set                        |
+| GET    | `/sets/`       | public   | List question sets                           |
+| POST   | `/rate`        | optional | Rate a question (1.0–5.0)                    |
+| GET    | `/job-titles/` | public   | List distinct job titles                     |
+
+**Query params (list & export):** `skip`, `limit` (1–1000), `q` (free-text search, max 200 chars), `job_title`, `question_type` (`technical`/`behavioral`/`mixed`), `flagged_only`.
+
+### Statistics — `/api/stats`
+
+| Method | Path | Auth   | Description                                                                                    |
+| ------ | ---- | ------ | ---------------------------------------------------------------------------------------------- |
+| GET    | `/`  | public | Aggregated stats + 7-day signup/evaluation series, difficulty distribution, 8-week score trend |
+
+### Documents — `/api/documents`
+
+| Method | Path         | Auth | Description                                 |
+| ------ | ------------ | ---- | ------------------------------------------- |
+| POST   | `/upload`    | user | Upload a resume/JD (`?document_type=`)      |
+| GET    | `/`          | user | List uploaded documents                     |
+| DELETE | `/{id}`      | user | Delete a document                           |
+| POST   | `/skill-gap` | user | Compare resume vs JD (`?resume_id=&jd_id=`) |
+
+### Interviews — `/api/interviews`
+
+| Method | Path                         | Auth | Description                |
+| ------ | ---------------------------- | ---- | -------------------------- |
+| POST   | `/sessions`                  | user | Start an interview session |
+| GET    | `/sessions`                  | user | List sessions              |
+| GET    | `/sessions/{id}`             | user | Get a session              |
+| GET    | `/sessions/{id}/messages`    | user | Get the transcript         |
+| GET    | `/sessions/{id}/evaluations` | user | Get answer evaluations     |
+| POST   | `/sessions/{id}/answer`      | user | Submit an answer           |
+| POST   | `/model-answer`              | user | Get a model answer         |
+
+### Auth — `/api/auth`
+
+| Method | Path        | Auth   | Description                         |
+| ------ | ----------- | ------ | ----------------------------------- |
+| POST   | `/register` | public | Register (first user becomes admin) |
+| POST   | `/login`    | public | Login, returns a session token      |
+| POST   | `/logout`   | user   | Invalidate the session              |
+| GET    | `/me`       | user   | Current user profile                |
+| GET    | `/history`  | user   | Action history                      |
+
+### Admin — `/api/admin` (requires `admin` role)
+
+| Method | Path                 | Description                  |
+| ------ | -------------------- | ---------------------------- |
+| GET    | `/users`             | List users                   |
+| DELETE | `/users/{id}`        | Delete a user                |
+| GET    | `/stats`             | Platform-wide statistics     |
+| GET    | `/history`           | Global action history        |
+| GET    | `/questions/flagged` | Flagged questions for review |
+| DELETE | `/questions/{id}`    | Delete any question          |
+
+### System
+
+| Method | Path      | Description                |
+| ------ | --------- | -------------------------- |
+| GET    | `/`       | API info                   |
+| GET    | `/health` | Liveness + DB connectivity |
+
+## LLM Integration
+
+The platform is **provider-agnostic**. `services/llm_service.py` wraps `litellm.completion` with a fallback chain:
+
+1. Try the primary `LLM_MODEL`.
+2. On failure or an empty response, walk `LLM_FALLBACK_MODELS`.
+3. If every provider fails, raise `LLMServiceError` (the `/generate` endpoint returns `503`).
+
+Question generation (`services/gemini_service.py`) builds a structured prompt, asks for a JSON array, and parses the response with a JSON-first / text-fallback strategy. Difficulty is clamped to 1–5 and question type is validated, so malformed model output never corrupts the database.
+
+To use a different provider, set `LLM_MODEL` and the matching key, e.g.:
 
 ```bash
-curl "http://localhost:8000/api/questions/?job_title=Software%20Engineer&question_type=technical"
+LLM_MODEL=openai/gpt-4o-mini OPENAI_API_KEY=sk-...
+# or
+LLM_MODEL=anthropic/claude-3-5-haiku-20241022 ANTHROPIC_API_KEY=sk-ant-...
+# or a local model
+LLM_MODEL=ollama/llama3
 ```
-
-## Testing
-
-The platform includes comprehensive error handling and validation:
-
-- **Input Validation**: Pydantic schemas validate all API inputs
-- **Database Constraints**: SQL constraints ensure data integrity
-- **Error Responses**: Structured error messages with proper HTTP status codes
-- **Health Checks**: System health monitoring endpoints
-
-## Dependency Security
-
-Backend pins are kept current (see `backend/requirements.txt`). On the
-frontend, `npm audit fix` plus targeted upgrades (`react-router-dom` 7.x,
-an `esbuild` override, and `vite` 6.4.3) clear all runtime and most
-build-tool advisories.
-
-**Known remaining advisories (5, all `devDependencies`, build-time only):**
-`tailwindcss` 3.4.19 → `chokidar` → `micromatch` → `braces` /
-`fast-glob` (stack-exhaustion DoS in the Tailwind JIT compiler).
-`tailwindcss` 3.4.19 is the final 3.x release, so the only fix is the
-Tailwind CSS 4.x rewrite (CSS-first `@theme` config, drops
-`tailwind.config.js`). That is a breaking, repo-wide change and is
-intentionally deferred — it does **not** affect the production bundle
-(`dist/`) or the running application, only local `npm run build` /
-`npm run dev` tooling. Track it as a follow-up: "Migrate frontend to
-Tailwind CSS 4".
 
 ## Database Migrations (Alembic)
 
-Schema changes are managed with **Alembic** migrations
-(`backend/alembic/`). The application's SQLAlchemy models
-(`backend/models.py`) are the source of truth; migrations are
-generated from them and applied with `alembic upgrade head`.
-
-`Base.metadata.create_all()` still runs on startup as a **dev
-fallback** (it logs that it is a fallback), so a fresh local
-database works without running migrations manually. In
-production, always use migrations.
-
-### Workflow
+Schema changes are managed with **Alembic** (`backend/alembic/`). The SQLAlchemy models are the source of truth.
 
 ```bash
 cd backend
 
-# 1. Create a new migration from model changes
+# Create a migration from model changes
 alembic revision --autogenerate -m "describe the change"
 
-# 2. Review the generated file in alembic/versions/
-
-# 3. Apply it
+# Review alembic/versions/, then apply
 alembic upgrade head
 
 # Check status
 alembic current
 ```
+
+`Base.metadata.create_all()` still runs on startup as a **development fallback** (it logs that it is a fallback), so a fresh local database works without running migrations manually. In production, always use migrations.
 
 ### Fresh database (Docker)
 
@@ -317,35 +310,91 @@ alembic current
 docker compose -f docker-compose.yml up -d db
 
 # Apply all migrations (creates every table)
-docker compose -f docker-compose.yml run --rm backend \
-    /app/venv/bin/alembic upgrade head
+docker compose -f docker-compose.yml run --rm backend /app/venv/bin/alembic upgrade head
 
 # Then start the rest of the stack
 docker compose -f docker-compose.yml up -d
 ```
 
-> **Note:** `db/init.sql` is no longer mounted into the postgres
-> image. Fresh volumes start empty so Alembic owns the schema.
-> For an existing database that was created with
-> `create_all()` (no `alembic_version` table), run
-> `alembic stamp head` once to bring it under migration
-> management before using `alembic upgrade`.
+> **Note:** `db/init.sql` is no longer mounted into the Postgres image. Fresh volumes start empty so Alembic owns the schema. For an existing database created with `create_all()` (no `alembic_version` table), run `alembic stamp head` once to bring it under migration management.
+
+## Development
+
+### Prerequisites
+
+- Docker and Docker Compose (for the full stack)
+- Node.js 20+ and Python 3.11+ (for local development)
+
+### Local backend
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload          # http://localhost:8000
+```
+
+### Local frontend
+
+```bash
+cd frontend
+npm install
+npm run dev                        # Vite dev server on http://localhost:5173
+```
+
+### Linting & formatting
+
+- **Python:** `ruff check .` and `ruff format .` (pinned to ruff 0.6.9 in pre-commit)
+- **Frontend:** `npm run lint` (ESLint) and `npm run format` (Prettier)
+- **Pre-commit:** `pre-commit install` then `pre-commit run --all-files` — runs ruff, ruff-format, prettier, trailing-whitespace, end-of-file-fixer, check-yaml, check-json, check-merge-conflict, and check-added-large-files
+
+## Testing
+
+```bash
+cd backend
+pytest                              # run the suite
+pytest --cov=. --cov-report=term    # with coverage
+```
+
+- **522 tests** across API, services, models, schemas, auth, RBAC, and lifecycle
+- **Coverage gate: 90%** (enforced by `.coveragerc` `fail_under` and `scripts/check_coverage.sh`); the suite currently sits at **~96%**
+- Tests run against in-memory SQLite; Postgres-specific SQL (full-text search, date bucketing) is dialect-detected so the same code serves both
+
+## Security
+
+- **No secrets in the repo** — all credentials come from environment variables; `.env` and `terraform.tfvars` are gitignored and never tracked
+- **Non-root containers** — backend runs as `appuser`, frontend as `nginxuser`
+- **Password hashing** — PBKDF2-HMAC-SHA256 with a per-user salt and 200k iterations
+- **Session tokens** — `secrets.token_urlsafe(32)`, stored as SHA-256 hashes
+- **SQL injection** — all queries use bound parameters; `LIKE` wildcards are escaped; search terms are parameterized
+- **CSV injection** — exported cells are neutralized
+- **Input validation** — Pydantic schemas validate every request; difficulty, ratings, and counts are range-checked
+- **CORS** — credentials are enabled, so origins must be an explicit list (a `*` wildcard is rejected at startup)
+- **Production guards** — `ENVIRONMENT=production` rejects default credentials in `DATABASE_URL`; prod compose requires `DB_PASSWORD`
+- **Dependency pinning** — backend `requirements.txt` is fully pinned (`==`); frontend uses a lockfile
 
 ## Deployment
 
-For production deployment:
+### Production (Docker Compose)
 
-1. **Update Environment Variables**
-   - Set production database URL
-   - Configure proper Gemini API key
-   - Update CORS origins for frontend URL
+```bash
+# Containerized database mode (set DB_NAME/DB_USER/DB_PASSWORD in .env)
+docker compose -f docker-compose.prod.yml --profile container-db up -d
 
-2. **Build Production Images**
+# RDS mode (set DATABASE_URL to the RDS endpoint in .env)
+docker compose -f docker-compose.prod.yml up -d
+```
 
-   ```bash
-   docker-compose -f docker-compose.prod.yml up --build
-   ```
+The prod stack adds `restart: unless-stopped`, memory/CPU limits, and a profile-gated database service so one file supports both container-DB and RDS modes.
 
-3. **Database Migrations**
-   - Database schema is automatically created on startup
-   - Sample data is inserted if tables are empty
+### Infrastructure (Terraform)
+
+The `infra/` directory provisions AWS infrastructure: EC2 (with SSM-based administration, SSH opt-in), RDS PostgreSQL in private subnets with encryption and automated backups, an ALB, and security groups that only expose 80/443. Secrets are passed via `TF_VAR_*` environment variables or a git-ignored `terraform.tfvars`; see `infra/terraform.tfvars.example`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [plans/](plans/) directory for the improvement roadmap.
+
+## License
+
+See the repository license file.
