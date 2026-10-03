@@ -35,6 +35,7 @@ const Questions: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedJobTitle, setSelectedJobTitle] = useState('all');
+  const [selectedCompany, setSelectedCompany] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +60,11 @@ const Questions: React.FC = () => {
   const { data: jobTitles = [] } = useQuery<string[]>({
     queryKey: ['job-titles'],
     queryFn: () => questionsApi.getJobTitles().then((r) => r.data),
+  });
+
+  const { data: companies = [] } = useQuery<string[]>({
+    queryKey: ['companies'],
+    queryFn: () => questionsApi.getCompanies().then((r) => r.data),
   });
 
   const updateMutation = useMutation({
@@ -135,6 +141,7 @@ const Questions: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['questions'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
       queryClient.invalidateQueries({ queryKey: ['job-titles'] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : parseAxiosError(err).message;
@@ -146,14 +153,16 @@ const Questions: React.FC = () => {
     return questions.filter((question) => {
       const matchesType = selectedType === 'all' || question.question_type === selectedType;
       const matchesJob = selectedJobTitle === 'all' || question.job_title === selectedJobTitle;
-      return matchesType && matchesJob;
+      const matchesCompany = selectedCompany === 'all' || question.company === selectedCompany;
+      return matchesType && matchesJob && matchesCompany;
     });
-  }, [questions, selectedType, selectedJobTitle]);
+  }, [questions, selectedType, selectedJobTitle, selectedCompany]);
 
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedType('all');
     setSelectedJobTitle('all');
+    setSelectedCompany('all');
   };
 
   const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -298,7 +307,7 @@ const Questions: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.1 }}
       >
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Search */}
           <div className="relative">
             <Search
@@ -348,6 +357,21 @@ const Questions: React.FC = () => {
             {jobTitles.map((title) => (
               <option key={title} value={title}>
                 {title}
+              </option>
+            ))}
+          </select>
+
+          {/* Company Filter */}
+          <select
+            value={selectedCompany}
+            onChange={(e) => setSelectedCompany(e.target.value)}
+            aria-label="Filter by company"
+            className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
+          >
+            <option value="all">All Companies</option>
+            {companies.map((company) => (
+              <option key={company} value={company}>
+                {company}
               </option>
             ))}
           </select>

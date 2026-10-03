@@ -17,6 +17,7 @@ const Generate: React.FC = () => {
     job_title: '',
     count: 5,
     question_type: 'mixed',
+    company: '',
   });
   const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
   const [error, setError] = useState<ErrorResponse | null>(null);
@@ -38,6 +39,10 @@ const Generate: React.FC = () => {
       errors.count = 'Number of questions must be between 1 and 100';
     }
 
+    if (formData.company && formData.company.trim().length > 100) {
+      errors.company = 'Company cannot exceed 100 characters';
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -54,6 +59,9 @@ const Generate: React.FC = () => {
       }
       queryClient.invalidateQueries({ queryKey: ['questions'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      if (data.some((question) => question.company)) {
+        queryClient.invalidateQueries({ queryKey: ['companies'] });
+      }
     },
     onError: (err: unknown) => {
       setError(parseAxiosError(err));
@@ -201,7 +209,7 @@ const Generate: React.FC = () => {
         transition={{ duration: 0.6, delay: 0.2 }}
       >
         <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">Job Title *</label>
               <input
@@ -245,6 +253,31 @@ const Generate: React.FC = () => {
               {validationErrors.count && (
                 <p className="text-error-600 text-sm mt-2">{validationErrors.count}</p>
               )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Company <span className="font-normal text-gray-500">(optional)</span>
+              </label>
+              <input
+                type="text"
+                name="company"
+                value={formData.company}
+                onChange={handleInputChange}
+                placeholder="e.g., Acme Corp"
+                aria-label="Company to tag the generated questions with"
+                className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white ${
+                  validationErrors.company
+                    ? 'border-error-300 focus:ring-error-500'
+                    : 'border-gray-300 focus:border-blue-500'
+                }`}
+              />
+              {validationErrors.company && (
+                <p className="text-error-600 text-sm mt-2">{validationErrors.company}</p>
+              )}
+              <p className="text-gray-500 text-sm mt-2">
+                Tag the batch with a company to enable company-specific mode in the library.
+              </p>
             </div>
           </div>
 

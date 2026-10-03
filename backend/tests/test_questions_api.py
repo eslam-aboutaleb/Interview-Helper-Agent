@@ -530,6 +530,306 @@ class TestJobTitles:
         assert set(response.json()) == {"SWE", "PM"}
 
 
+class TestCompanyMode:
+    """Company tagging, filtering and the ``/companies/`` lookup endpoint."""
+
+    @staticmethod
+    def _seed(db_session, *, text, company=None, job_title="SWE", question_type="technical"):
+        from models import Question
+
+        question = Question(
+            job_title=job_title,
+            question_text=text,
+            question_type=question_type,
+            company=company,
+        )
+        db_session.add(question)
+        db_session.commit()
+        db_session.refresh(question)
+        return question
+
+    # -- create / update ------------------------------------------------
+    def test_create_question_with_company(self, client):
+        response = client.post(
+            "/api/questions/",
+            json={
+                "job_title": "SWE",
+                "question_text": "Explain how a B-tree index is organized?",
+                "question_type": "technical",
+                "company": "Acme Corp",
+            },
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["company"] == "Acme Corp"
+
+    def test_create_question_without_company(self, client):
+        response = client.post(
+            "/api/questions/",
+            json={
+                "job_title": "SWE",
+                "question_text": "Explain how a hash table works?",
+                "question_type": "technical",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["company"] is None
+
+    def test_blank_company_is_normalized_to_null(self, client):
+        response = client.post(
+            "/api/questions/",
+            json={
+                "job_title": "SWE",
+                "question_text": "Explain how a heap is laid out in memory?",
+                "question_type": "technical",
+                "company": "   ",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["company"] is None
+
+    def test_company_is_trimmed(self, client):
+        response = client.post(
+            "/api/questions/",
+            json={
+                "job_title": "SWE",
+                "question_text": "Describe how you would shard a database?",
+                "question_type": "technical",
+                "company": "  Globex  ",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["company"] == "Globex"
+
+    def test_company_longer_than_100_is_rejected(self, client):
+        response = client.post(
+            "/api/questions/",
+            json={
+                "job_title": "SWE",
+                "question_text": "Explain how a hash table works?",
+                "question_type": "technical",
+                "company": "c" * 101,
+            },
+        )
+        assert response.status_code == 422
+
+    def test_update_company(self, client, db_session):
+        question = self._seed(db_session, text="Explain how a trie is structured?")
+        response = client.put(f"/api/questions/{question.id}", json={"company": "Initech"})
+        assert response.status_code == 200
+        assert response.json()["company"] == "Initech"
+
+    def test_update_company_to_blank_clears_it(self, client, db_session):
+        question = self._seed(db_session, text="Explain how a trie is structured?", company="Initech")
+        response = client.put(f"/api/questions/{question.id}", json={"company": "  "})
+        assert response.status_code == 200
+        assert response.json()["company"] is None
+
+    def test_update_without_company_keeps_the_value(self, client, db_session):
+        question = self._seed(db_session, text="Explain how a trie is structured?", company="Initech")
+        response = client.put(f"/api/questions/{question.id}", json={"difficulty": 4})
+        assert response.status_code == 200
+        assert response.json()["company"] == "Initech"
+
+    def test_model_validates_company(self, client, db_session):
+        """The model guard runs when Pydantic validation is bypassed."""
+        from models import Question
+
+        stored = self._seed(db_session, text="Explain how a trie is structured?", company="  Initech  ")
+        assert stored.company == "Initech"
+
+        blank = Question(
+            job_title="SWE",
+            question_text="Explain how a graph is stored?",
+            question_type="technical",
+            company="   ",
+        )
+        assert blank.company is None
+
+        with pytest.raises(ValueError):
+            Question(
+                job_title="SWE",
+                question_text="Explain how a graph is stored?",
+                question_type="technical",
+                company="c" * 101,
+            )
+
+    # -- filtering ------------------------------------------------------
+    def test_filter_by_company(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        self._seed(db_session, text="Explain the Globex billing service?", company="Globex")
+
+        response = client.get("/api/questions/", params={"company": "Acme Corp"})
+        assert response.status_code == 200
+        payload = response.json()
+        assert [item["company"] for item in payload] == ["Acme Corp"]
+
+    def test_company_filter_is_case_insensitive_and_partial(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        self._seed(db_session, text="Explain the Globex billing service?", company="Globex")
+
+        response = client.get("/api/questions/", params={"company": "glob"})
+        assert response.status_code == 200
+        assert [item["company"] for item in response.json()] == ["Globex"]
+
+    def test_company_filter_treats_wildcards_literally(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        self._seed(db_session, text="Explain the Initech rollout process?", company="Initech")
+
+        response = client.get("/api/questions/", params={"company": "%"})
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_blank_company_filter_is_ignored(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        self._seed(db_session, text="Explain a generic distributed system?", company=None)
+
+        response = client.get("/api/questions/", params={"company": "   "})
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+    def test_company_filter_combines_with_job_title(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp", job_title="SWE")
+        self._seed(
+            db_session,
+            text="Explain the Acme pricing strategy?",
+            company="Acme Corp",
+            job_title="PM",
+            question_type="behavioral",
+        )
+
+        response = client.get("/api/questions/", params={"company": "Acme", "job_title": "PM"})
+        assert response.status_code == 200
+        assert [item["job_title"] for item in response.json()] == ["PM"]
+
+    def test_export_filters_by_company(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        self._seed(db_session, text="Explain the Globex billing service?", company="Globex")
+
+        response = client.get("/api/questions/export", params={"format": "json", "company": "Globex"})
+        assert response.status_code == 200
+        payload = json.loads(response.text)
+        assert [item["company"] for item in payload] == ["Globex"]
+
+    # -- /companies/ endpoint -------------------------------------------
+    def test_companies_endpoint_returns_distinct_sorted_values(self, client, db_session):
+        self._seed(db_session, text="Explain the Globex billing service?", company="Globex")
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        self._seed(db_session, text="Explain another Globex service?", company="Globex")
+        self._seed(db_session, text="Explain a generic distributed system?", company=None)
+
+        response = client.get("/api/questions/companies/")
+        assert response.status_code == 200
+        assert response.json() == ["Acme Corp", "Globex"]
+
+    def test_companies_endpoint_skips_empty_strings(self, client, db_session):
+        self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        # The model validator normalizes a blank company to NULL.
+        self._seed(db_session, text="Explain a very generic system design?", company="   ")
+
+        response = client.get("/api/questions/companies/")
+        assert response.status_code == 200
+        assert response.json() == ["Acme Corp"]
+
+    def test_companies_endpoint_empty_bank(self, client):
+        response = client.get("/api/questions/companies/")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_companies_route_is_declared_before_the_dynamic_route(self, client, db_session):
+        """``/{question_id}`` must not swallow the static ``/companies/`` path."""
+        from routes.questions import router
+
+        paths = [route.path for route in router.routes]
+        assert paths.index("/companies/") < paths.index("/{question_id}")
+
+        question = self._seed(db_session, text="Explain the Acme deployment pipeline?", company="Acme Corp")
+        # The dynamic route still resolves real IDs.
+        detail = client.get(f"/api/questions/{question.id}")
+        assert detail.status_code == 200
+        assert detail.json()["company"] == "Acme Corp"
+
+        # A non-numeric segment under the static prefix stays a lookup, not a 422.
+        listing = client.get("/api/questions/companies/")
+        assert listing.status_code == 200
+        assert listing.json() == ["Acme Corp"]
+
+    def test_companies_endpoint_error_path(self, client, db_session, monkeypatch):
+        def failing_query(*args, **kwargs):
+            raise RuntimeError("connection lost")
+
+        monkeypatch.setattr(db_session, "query", failing_query)
+        response = client.get("/api/questions/companies/")
+        assert response.status_code == 500
+
+    # -- generate / import ----------------------------------------------
+    def test_generate_tags_questions_with_company(self, client, gemini_override, db_session):
+        gemini_override.questions = [
+            {
+                "job_title": "SWE",
+                "question_text": "How does the Acme scheduler balance load?",
+                "question_type": "technical",
+                "difficulty": 3,
+            }
+        ]
+        response = client.post(
+            "/api/questions/generate",
+            json={"job_title": "SWE", "count": 1, "company": "Acme Corp"},
+        )
+        assert response.status_code == 201
+        assert response.json()[0]["company"] == "Acme Corp"
+
+    def test_generate_without_company_leaves_it_null(self, client, gemini_override):
+        gemini_override.questions = [
+            {
+                "job_title": "SWE",
+                "question_text": "How does a scheduler balance load?",
+                "question_type": "technical",
+                "difficulty": 3,
+            }
+        ]
+        response = client.post("/api/questions/generate", json={"job_title": "SWE", "count": 1})
+        assert response.status_code == 201
+        assert response.json()[0]["company"] is None
+
+    def test_import_accepts_company(self, client):
+        response = client.post(
+            "/api/questions/import",
+            json=[
+                {
+                    "job_title": "SWE",
+                    "question_text": "Explain how the Acme scheduler works?",
+                    "question_type": "technical",
+                    "company": "Acme Corp",
+                },
+                {
+                    "job_title": "SWE",
+                    "question_text": "Explain the Globex billing flow?",
+                    "question_type": "technical",
+                    "company": "Globex",
+                },
+            ],
+        )
+        assert response.status_code == 200
+        assert response.json()["imported"] == 2
+        assert client.get("/api/questions/companies/").json() == ["Acme Corp", "Globex"]
+
+    def test_company_longer_than_100_is_skipped_on_import(self, client):
+        response = client.post(
+            "/api/questions/import",
+            json=[
+                {
+                    "job_title": "SWE",
+                    "question_text": "Explain how the Acme scheduler works?",
+                    "question_type": "technical",
+                    "company": "c" * 101,
+                }
+            ],
+        )
+        assert response.status_code == 200
+        assert response.json()["imported"] == 0
+        assert response.json()["skipped"] == 1
+
+
 class TestRouteLevelValidation:
     """Direct handler tests for the route-level 400 guards.
 

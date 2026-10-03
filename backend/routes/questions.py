@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 import csv
 import io
 import json
+import logging
 
 # Import database connection handler
 from database import get_db
@@ -38,6 +39,8 @@ from deps import get_optional_user
 
 # Initialize FastAPI router for question-related endpoints
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # Columns scanned by the free-text search, in priority order.
 SEARCH_COLUMNS = (Question.question_text, Question.job_title, Question.tags)
@@ -123,6 +126,7 @@ def apply_question_filters(
     question_type: Optional[str] = None,
     flagged_only: bool = False,
     q: Optional[str] = None,
+    company: Optional[str] = None,
 ) -> Tuple[Any, Optional[Any]]:
     """Apply the shared list/export filters to a ``Question`` query.
 
@@ -133,6 +137,7 @@ def apply_question_filters(
         question_type: Optional exact type filter.
         flagged_only: When True, restrict to flagged questions.
         q: Optional free-text search term.
+        company: Optional case-insensitive partial company filter.
 
     Returns:
         A ``(query, rank)`` tuple where ``rank`` is the relevance expression
@@ -143,6 +148,9 @@ def apply_question_filters(
     """
     if job_title and job_title.strip():
         query = query.filter(Question.job_title.ilike(f"%{escape_like(job_title.strip())}%", escape="\\"))
+
+    if company and company.strip():
+        query = query.filter(Question.company.ilike(f"%{escape_like(company.strip())}%", escape="\\"))
 
     if question_type:
         if question_type not in ["technical", "behavioral", "mixed"]:
@@ -220,7 +228,7 @@ async def generate_questions(
     """Generate new interview questions using AI
 
     Args:
-        request: Contains job_title, count, and question_type for generation
+        request: Contains job_title, count, question_type, and optional company
         db: Database session dependency
         gemini_service: Lazily-initialized Gemini service
         current_user: Authenticated user (optional)
@@ -254,6 +262,8 @@ async def generate_questions(
         saved_questions = []
         for q_data in generated_questions:
             q_data["user_id"] = current_user.id if current_user else None
+            # Company mode: tag the whole batch with the requested company.
+            q_data["company"] = request.company
             question = Question(**q_data)  # Create ORM object from dict
             db.add(question)
             db.commit()  # Commit each question individually
@@ -269,6 +279,7 @@ async def generate_questions(
                 context={
                     "job_title": request.job_title,
                     "question_type": request.question_type,
+                    "company": request.company,
                     "count": len(saved_questions),
                     "question_ids": [q.id for q in saved_questions],
                 },
@@ -314,15 +325,21 @@ async def get_questions(
     flagged_only: bool = Query(
         False, description="If True, return only flagged questions", title="Flagged Questions Only"
     ),
+    company: Optional[str] = Query(
+        None,
+        max_length=100,
+        description="Filter by company (case-insensitive partial match)",
+        title="Company Filter",
+    ),
     db: Session = Depends(get_db),
 ):
     """Get questions with filtering, full-text search, and pagination options
 
     Returns a paginated list of questions with optional filtering by job title,
-    type, and flagged status. When ``q`` is provided the search runs against
-    ``question_text``, ``job_title`` and ``tags`` using Postgres full-text
-    search (ordered by relevance) or an ILIKE fallback on other dialects
-    (ordered by ``created_at``).
+    type, company, and flagged status. When ``q`` is provided the search runs
+    against ``question_text``, ``job_title`` and ``tags`` using Postgres
+    full-text search (ordered by relevance) or an ILIKE fallback on other
+    dialects (ordered by ``created_at``).
 
     Args:
         skip: Number of records to skip (pagination offset)
@@ -331,6 +348,7 @@ async def get_questions(
         job_title: Case-insensitive partial job-title filter
         question_type: Exact question-type filter
         flagged_only: Return only flagged questions
+        company: Case-insensitive partial company filter
         db: Database session dependency
 
     Returns:
@@ -349,6 +367,7 @@ async def get_questions(
             question_type=question_type,
             flagged_only=flagged_only,
             q=q,
+            company=company,
         )
 
         # Execute query with pagination
@@ -383,6 +402,12 @@ async def export_questions(
     flagged_only: bool = Query(
         False, description="If True, export only flagged questions", title="Flagged Questions Only"
     ),
+    company: Optional[str] = Query(
+        None,
+        max_length=100,
+        description="Filter by company (case-insensitive partial match)",
+        title="Company Filter",
+    ),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """Export questions as a downloadable JSON or CSV file
@@ -398,6 +423,7 @@ async def export_questions(
         job_title: Optional case-insensitive partial job-title filter
         question_type: Optional exact question-type filter
         flagged_only: Export only flagged questions
+        company: Optional case-insensitive partial company filter
         db: Database session dependency
 
     Returns:
@@ -422,6 +448,7 @@ async def export_questions(
             question_type=question_type,
             flagged_only=flagged_only,
             q=q,
+            company=company,
         )
         questions = query.all()
 
@@ -527,6 +554,42 @@ async def import_questions(
         )
 
     return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+@router.get("/companies/", response_model=List[str], status_code=status.HTTP_200_OK)
+async def get_companies(db: Session = Depends(get_db)):
+    """Get all distinct companies
+
+    Retrieves a sorted list of the distinct non-empty companies tagged on
+    questions in the database. Useful for the company filter dropdown.
+
+    NOTE: like ``/export``, ``/import`` and ``/job-titles/``, this static path
+    is declared ahead of the ``/{question_id}`` route so the dynamic route
+    cannot swallow it.
+
+    Args:
+        db: Database session dependency
+
+    Returns:
+        List of unique company strings
+
+    Raises:
+        HTTPException 500: If database query fails
+    """
+    try:
+        companies = (
+            db.query(Question.company)
+            .filter(Question.company.isnot(None))
+            .filter(Question.company != "")
+            .distinct()
+            .order_by(Question.company)
+            .all()
+        )
+        return [company[0] for company in companies if company[0]]
+
+    except Exception:
+        logger.exception("Failed to retrieve companies")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.get("/{question_id}", response_model=QuestionSchema, status_code=status.HTTP_200_OK)

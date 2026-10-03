@@ -9,6 +9,7 @@ import {
   Video,
   FileText,
   Sparkles,
+  GraduationCap,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -23,6 +24,7 @@ const Header: React.FC = () => {
     { path: '/stats', label: 'Statistics', icon: BarChart3 },
     { path: '/documents', label: 'Documents', icon: FileText },
     { path: '/skill-gap', label: 'Skill Gap', icon: Sparkles },
+    { path: '/learning-plan', label: 'Learning Plan', icon: GraduationCap },
   ];
 
   const isActive = (path: string) => location.pathname === path;

@@ -13,6 +13,7 @@ import Generate from './pages/Generate';
 import Interview from './pages/Interview';
 import Documents from './pages/Documents';
 import SkillGap from './pages/SkillGap';
+import LearningPlan from './pages/LearningPlan';
 
 // Stats pulls in recharts (~450 kB minified), which is only needed on
 // /stats. Lazy-loading it keeps that weight out of the initial bundle for
@@ -36,6 +37,7 @@ function App() {
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/documents" element={<Documents />} />
                   <Route path="/skill-gap" element={<SkillGap />} />
+                  <Route path="/learning-plan" element={<LearningPlan />} />
                 </Routes>
               </Suspense>
             </main>
