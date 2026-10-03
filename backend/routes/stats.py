@@ -1,15 +1,19 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.sql.elements import ColumnElement
 
 from database import get_db
 from models import AnswerEvaluation, Question, QuestionSet, User
 from schemas import StatsResponse
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # Window sizes for the dashboard time series. The series are dense
 # (zero-filled) so the charts never have to interpolate missing buckets.
@@ -19,7 +23,7 @@ TREND_WINDOW_WEEKS = 8
 DIFFICULTY_LEVELS = (1, 2, 3, 4, 5)
 
 
-def _day_bucket(column, dialect_name: str):
+def _day_bucket(column: ColumnElement, dialect_name: str):
     """Day bucket expression for ``column`` on the given dialect.
 
     PostgreSQL truncates with ``date_trunc``; SQLite has no ``date_trunc``
@@ -204,7 +208,6 @@ async def get_stats(db: Session = Depends(get_db)):
             average_score_trend=average_score_trend,
         )
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve statistics: {str(e)}"
-        )
+    except Exception:
+        logger.exception("Failed to retrieve statistics")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")

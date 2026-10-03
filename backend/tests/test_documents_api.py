@@ -286,3 +286,23 @@ class TestDocumentServiceUnit:
         gap = document_service.compute_skill_gap(resume, jd)
         assert gap["extra_skills"] == ["rust"]
         assert gap["match_percentage"] == 100.0
+
+    def test_find_skills_uses_word_boundaries(self):
+        """Substring matches inside longer words must not count (M7)."""
+        # "api" must not match inside "rapid".
+        assert "api" not in document_service._find_skills("rapid development workflow", document_service.CONCEPTS)
+        assert "api" in document_service._find_skills("design a REST API", document_service.CONCEPTS)
+        # "go" must not match inside "golang".
+        assert "go" not in document_service._find_skills(
+            "golang backend service", document_service.PROGRAMMING_LANGUAGES
+        )
+        assert "go" in document_service._find_skills("written in Go", document_service.PROGRAMMING_LANGUAGES)
+
+    def test_find_skills_matches_cxx_and_csharp(self):
+        """Skills with non-word characters anchor on lookarounds (M7)."""
+        languages = document_service.PROGRAMMING_LANGUAGES
+        assert "c++" in document_service._find_skills("I write C++ code", languages)
+        assert "c++" in document_service._find_skills("C++ is fun", languages)
+        assert "c#" in document_service._find_skills("I write C# code", languages)
+        assert "c#" in document_service._find_skills("C#, please", languages)
+        assert "c++" not in document_service._find_skills("just C code", languages)

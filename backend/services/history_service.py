@@ -22,7 +22,10 @@ def record_action(
     """Record a user action in the question history.
 
     History recording is best-effort: failures are logged but never
-    interrupt the primary workflow.
+    interrupt the primary workflow. The entry is only added to the
+    session — the caller owns the transaction and must commit for
+    the entry to be persisted. A rollback here would undo the
+    caller's pending work, so failures just log and return None.
 
     Args:
         db: Database session.
@@ -46,12 +49,9 @@ def record_action(
             context=context,
         )
         db.add(entry)
-        db.commit()
-        db.refresh(entry)
         return entry
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Failed to record history action %s: %s", action, e)
-        db.rollback()
         return None
 
 

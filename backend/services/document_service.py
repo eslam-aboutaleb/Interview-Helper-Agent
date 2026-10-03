@@ -113,8 +113,8 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     except ImportError:
         logger.warning("pypdf not installed; cannot parse PDF")
         return ""
-    except Exception as e:
-        logger.error(f"PDF parsing failed: {e}")
+    except Exception:
+        logger.exception("PDF parsing failed")
         return ""
 
 
@@ -129,8 +129,8 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     except ImportError:
         logger.warning("python-docx not installed; cannot parse DOCX")
         return ""
-    except Exception as e:
-        logger.error(f"DOCX parsing failed: {e}")
+    except Exception:
+        logger.exception("DOCX parsing failed")
         return ""
 
 
@@ -147,7 +147,20 @@ def extract_text(filename: str, file_bytes: bytes) -> str:
 
 def _find_skills(text: str, skill_set: set[str]) -> list[str]:
     lower = text.lower()
-    return sorted({skill for skill in skill_set if skill in lower})
+    return sorted({skill for skill in skill_set if _skill_in_text(skill, lower)})
+
+
+def _skill_in_text(skill: str, lower: str) -> bool:
+    """Match ``skill`` in ``lower`` on word boundaries.
+
+    ``\b`` misbehaves when a skill starts or ends with a non-word
+    character (``c++``, ``c#``), so those skills anchor with
+    lookarounds that require a non-word neighbor instead.
+    """
+    escaped = re.escape(skill)
+    if skill[0].isalnum() and skill[-1].isalnum():
+        return re.search(rf"\b{escaped}\b", lower) is not None
+    return re.search(rf"(?<![\w]){escaped}(?![\w])", lower) is not None
 
 
 def extract_years_of_experience(text: str) -> Optional[int]:

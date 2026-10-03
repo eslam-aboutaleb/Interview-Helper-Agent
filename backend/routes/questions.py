@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query as SAQuery, Session
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 import csv
 import io
@@ -59,6 +59,10 @@ CSV_EXPORT_COLUMNS = (
 
 # Supported values for the ``format`` query parameter of the export endpoint.
 EXPORT_FORMATS = ("json", "csv")
+
+# Maximum number of questions accepted by a single import request,
+# mirroring the ``QuestionSetCreate.question_ids`` cap.
+IMPORT_PAYLOAD_LIMIT = 1000
 
 # Leading characters that make a spreadsheet treat a cell as a formula.
 # Tab and carriage return are included because Excel also honours them.
@@ -120,7 +124,7 @@ def build_search_filter(dialect_name: str, term: str) -> Tuple[Any, Optional[Any
 
 
 def apply_question_filters(
-    query,
+    query: SAQuery,
     dialect_name: str,
     job_title: Optional[str] = None,
     question_type: Optional[str] = None,
@@ -179,11 +183,16 @@ def apply_question_filters(
 def sanitize_csv_cell(value: Any) -> str:
     """Neutralize spreadsheet formula injection in an exported CSV cell.
 
-    A leading ``=``, ``+``, ``-`` or ``@`` (or a leading tab/carriage return)
-    is prefixed with a single quote so spreadsheets render the value as text.
+    A leading ``=``, ``+`` or ``@`` (or a leading tab/carriage return)
+    is prefixed with a single quote so spreadsheets render the value as
+    text. A leading ``-`` is only prefixed when it is not a plain
+    negative number: ``-5`` stays as-is while shapes like ``-x`` or
+    ``- 1`` are neutralized.
     """
     text = "" if value is None else str(value)
     if text[:1] in CSV_INJECTION_PREFIXES:
+        if text[:1] == "-" and text[1:2].isdigit():
+            return text
         return f"'{text}"
     return text
 
@@ -201,8 +210,9 @@ def questions_csv_document(questions: List[Question]) -> str:
 def questions_json_chunks(questions: List[Question]) -> Iterator[str]:
     """Yield a JSON array of questions one serialized element at a time.
 
-    Streaming keeps memory flat for large banks and still produces a single
-    valid JSON document.
+    The caller has already materialized the rows (``query.all()``),
+    so this only spreads the serialization cost across chunks while
+    still producing a single valid JSON document.
     """
     yield "["
     for index, question in enumerate(questions):
@@ -267,9 +277,14 @@ async def generate_questions(
             q_data["company"] = request.company
             question = Question(**q_data)  # Create ORM object from dict
             db.add(question)
-            db.commit()  # Commit each question individually
-            db.refresh(question)  # Refresh to get auto-generated values like ID
             saved_questions.append(question)
+
+        # One commit for the whole batch: a failure partway through
+        # leaves nothing persisted instead of a partial batch.
+        db.commit()
+        for question in saved_questions:
+            # Refresh to get auto-generated values like ID
+            db.refresh(question)
 
         # Track generation in user history
         if saved_questions:
@@ -285,6 +300,8 @@ async def generate_questions(
                     "question_ids": [q.id for q in saved_questions],
                 },
             )
+            # record_action only stages the history entry; persist it.
+            db.commit()
 
         return saved_questions
 
@@ -297,12 +314,11 @@ async def generate_questions(
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid input: {str(e)}")
-    except Exception as e:
+    except Exception:
         # Rollback transaction on error to maintain database integrity
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate questions: {str(e)}"
-        )
+        logger.exception("Failed to generate questions")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.get("/", response_model=List[QuestionSchema], status_code=status.HTTP_200_OK)
@@ -377,10 +393,9 @@ async def get_questions(
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve questions: {str(e)}"
-        )
+    except Exception:
+        logger.exception("Failed to retrieve questions")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 # NOTE: /export and /import are declared before the /{question_id} routes on
@@ -388,6 +403,10 @@ async def get_questions(
 @router.get("/export")
 async def export_questions(
     format: str = Query("json", description="Export format: 'json' or 'csv'", title="Export Format"),
+    skip: int = Query(0, ge=0, description="Number of records to skip for pagination", title="Pagination Offset"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of records to return (max 1000)", title="Pagination Limit"
+    ),
     q: Optional[str] = Query(
         None,
         max_length=200,
@@ -420,6 +439,8 @@ async def export_questions(
 
     Args:
         format: 'json' or 'csv'
+        skip: Number of records to skip (pagination offset)
+        limit: Maximum number of records to return
         q: Optional free-text search term
         job_title: Optional case-insensitive partial job-title filter
         question_type: Optional exact question-type filter
@@ -451,14 +472,13 @@ async def export_questions(
             q=q,
             company=company,
         )
-        questions = query.all()
+        questions = query.offset(skip).limit(limit).all()
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to export questions: {str(e)}"
-        )
+    except Exception:
+        logger.exception("Failed to export questions")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
     headers = {"Content-Disposition": f'attachment; filename="questions.{export_format}"'}
 
@@ -496,7 +516,8 @@ async def import_questions(
         Summary dict with ``imported``, ``skipped`` and per-entry ``errors``
 
     Raises:
-        HTTPException 400: If the payload is empty
+        HTTPException 400: If the payload is empty or exceeds
+            ``IMPORT_PAYLOAD_LIMIT`` entries
         HTTPException 401: If the caller is not authenticated
         HTTPException 422: If the body is not a JSON array
         HTTPException 500: If the batch cannot be committed
@@ -505,6 +526,12 @@ async def import_questions(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="payload must contain at least one question",
+        )
+
+    if len(payload) > IMPORT_PAYLOAD_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"payload must contain at most {IMPORT_PAYLOAD_LIMIT} questions",
         )
 
     imported = 0
@@ -537,14 +564,19 @@ async def import_questions(
         except (IntegrityError, ValueError) as exc:
             skipped += 1
             errors.append({"index": index, "error": str(getattr(exc, "orig", None) or exc)})
+            # Keep the failed entry out of the session so the final
+            # commit cannot re-flush it. The savepoint rollback may
+            # have already expunged it, so only expunge when the
+            # entry is still present.
+            if question in db:
+                db.expunge(question)
 
     try:
         db.commit()
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to import questions: {str(e)}"
-        )
+        logger.exception("Failed to import questions")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
     # Track the import in user history
     if imported:
@@ -554,6 +586,8 @@ async def import_questions(
             user_id=current_user.id,
             context={"source": "import", "count": imported},
         )
+        # record_action only stages the history entry; persist it.
+        db.commit()
 
     return {"imported": imported, "skipped": skipped, "errors": errors}
 
@@ -625,14 +659,15 @@ async def get_question(
         # Track the view in user history
         if current_user:
             record_action(db, action="viewed", user_id=current_user.id, question_id=question.id)
+            # record_action only stages the history entry; persist it.
+            db.commit()
         return question
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve question: {str(e)}"
-        )
+    except Exception:
+        logger.exception("Failed to retrieve question")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.post("/", response_model=QuestionSchema, status_code=status.HTTP_201_CREATED)
@@ -684,6 +719,8 @@ async def create_question(
         db.refresh(db_question)
         # Track creation in user history
         record_action(db, action="created", user_id=current_user.id, question_id=db_question.id)
+        # record_action only stages the history entry; persist it.
+        db.commit()
         return db_question
 
     except HTTPException:
@@ -692,12 +729,11 @@ async def create_question(
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid data: {str(e)}")
-    except Exception as e:
+    except Exception:
         # Rollback on error
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to create question: {str(e)}"
-        )
+        logger.exception("Failed to create question")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.put("/{question_id}", response_model=QuestionSchema, status_code=status.HTTP_200_OK)
@@ -766,6 +802,8 @@ async def update_question(
                 question_id=question.id,
                 context={"is_flagged": question.is_flagged},
             )
+            # record_action only stages the history entry; persist it.
+            db.commit()
         return question
 
     except HTTPException:
@@ -774,12 +812,11 @@ async def update_question(
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid data: {str(e)}")
-    except Exception as e:
+    except Exception:
         # Rollback on error
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update question: {str(e)}"
-        )
+        logger.exception("Failed to update question")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -820,21 +857,24 @@ async def delete_question(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Question with ID {question_id} not found"
             )
 
-        # Track deletion in user history before removing
-        record_action(db, action="deleted", user_id=current_user.id, question_id=question.id)
         # Remove from database
         db.delete(question)
+        db.commit()
+
+        # Track deletion in user history after the delete commits so
+        # a failed delete is never logged as "deleted".
+        record_action(db, action="deleted", user_id=current_user.id, question_id=question.id)
+        # record_action only stages the history entry; persist it.
         db.commit()
 
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
         # Rollback on error
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete question: {str(e)}"
-        )
+        logger.exception("Failed to delete question")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.post("/sets", response_model=QuestionSetSchema, status_code=status.HTTP_201_CREATED)
@@ -872,11 +912,17 @@ async def create_question_set(
         if not question_set.question_ids:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question_ids list cannot be empty")
 
-        # Verify all question IDs exist
-        for q_id in question_set.question_ids:
-            question = db.query(Question).filter(Question.id == q_id).first()
-            if not question:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Question with ID {q_id} not found")
+        # Verify all question IDs exist in a single query instead of
+        # one round-trip per ID.
+        existing_ids = {
+            row[0] for row in db.query(Question.id).filter(Question.id.in_(question_set.question_ids)).all()
+        }
+        missing_ids = [q_id for q_id in question_set.question_ids if q_id not in existing_ids]
+        if missing_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Questions not found: {', '.join(str(q_id) for q_id in missing_ids)}",
+            )
 
         # Convert question IDs list to JSON string for storage
         question_ids_json = json.dumps(question_set.question_ids)
@@ -900,12 +946,11 @@ async def create_question_set(
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid data: {str(e)}")
-    except Exception as e:
+    except Exception:
         # Rollback on error
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to create question set: {str(e)}"
-        )
+        logger.exception("Failed to create question set")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.get("/sets/", response_model=List[QuestionSetSchema], status_code=status.HTTP_200_OK)
@@ -937,10 +982,9 @@ async def get_question_sets(
         sets = db.query(QuestionSet).offset(skip).limit(limit).all()
         return sets
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve question sets: {str(e)}"
-        )
+    except Exception:
+        logger.exception("Failed to retrieve question sets")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.post("/rate", response_model=UserRatingSchema, status_code=status.HTTP_201_CREATED)
@@ -994,6 +1038,8 @@ async def rate_question(
             question_id=rating.question_id,
             context={"rating": db_rating.rating},
         )
+        # record_action only stages the history entry; persist it.
+        db.commit()
         return db_rating
 
     except HTTPException:
@@ -1002,12 +1048,11 @@ async def rate_question(
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid data: {str(e)}")
-    except Exception as e:
+    except Exception:
         # Rollback on error
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to rate question: {str(e)}"
-        )
+        logger.exception("Failed to rate question")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 @router.get("/job-titles/", response_model=List[str], status_code=status.HTTP_200_OK)
@@ -1032,7 +1077,6 @@ async def get_job_titles(db: Session = Depends(get_db)):
         # Convert from list of tuples to list of strings, filter out None values
         return [title[0] for title in job_titles if title[0]]
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve job titles: {str(e)}"
-        )
+    except Exception:
+        logger.exception("Failed to retrieve job titles")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")

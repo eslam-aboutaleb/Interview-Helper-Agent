@@ -127,6 +127,40 @@ class TestGenerateQuestions:
         ).fetchall()
         assert ("generated",) in history
 
+    def test_generate_failure_mid_batch_persists_nothing(self, client, gemini_override, db_session, monkeypatch):
+        """A failure at question 3 of 5 must leave nothing persisted (M2)."""
+        from models import Question
+
+        gemini_override.questions = [
+            {
+                "job_title": "SWE",
+                "question_text": f"Generated question number {i}?",
+                "question_type": "technical",
+            }
+            for i in range(5)
+        ]
+        user = register(client)
+        real_add = db_session.add
+        calls = {"count": 0}
+
+        def flaky_add(obj):
+            if isinstance(obj, Question):
+                calls["count"] += 1
+                if calls["count"] == 3:
+                    raise RuntimeError("persist failed")
+            return real_add(obj)
+
+        monkeypatch.setattr(db_session, "add", flaky_add)
+        response = client.post(
+            "/api/questions/generate",
+            json={"job_title": "SWE", "count": 5},
+            headers=auth_headers(user["token"]),
+        )
+        assert response.status_code == 500
+        # M1: the 500 body must not leak the exception text.
+        assert response.json()["detail"] == "Internal server error"
+        assert db_session.query(Question).count() == 0
+
     def test_generate_empty_job_title(self, client, gemini_override):
         # Pydantic rejects the blank job title before the handler runs.
         user = register(client)
@@ -499,6 +533,34 @@ class TestQuestionSets:
             headers=auth_headers(user["token"]),
         )
         assert response.status_code == 404
+
+    def test_create_set_missing_questions_lists_ids(self, client, db_session):
+        """The 404 lists every missing ID, resolved with one query (M5)."""
+        from models import Question
+
+        user = register(client)
+        q = Question(
+            job_title="SWE",
+            question_text="Explain how a hash table works?",
+            question_type="technical",
+        )
+        db_session.add(q)
+        db_session.commit()
+        db_session.refresh(q)
+        response = client.post(
+            "/api/questions/sets",
+            json={
+                "name": "Set",
+                "job_title": "SWE",
+                "question_ids": [q.id, 99998, 99999],
+            },
+            headers=auth_headers(user["token"]),
+        )
+        assert response.status_code == 404
+        detail = response.json()["detail"]
+        assert "99998" in detail
+        assert "99999" in detail
+        assert str(q.id) not in detail
 
     def test_list_sets(self, client):
         response = client.get("/api/questions/sets/")
@@ -1690,7 +1752,7 @@ class TestExportQuestions:
         for text in (
             "=SUM(A1:A9) what is the total",
             "+1234 injection payload here",
-            "-1234 injection payload here",
+            "-SUM(A1:A9) injection payload here",
             "@SUM(A1:A9) injection payload",
         ):
             db_session.add(Question(job_title="SWE", question_text=text, question_type="technical"))
@@ -1706,6 +1768,17 @@ class TestExportQuestions:
         # Every exported cell still round-trips through a CSV reader.
         assert "'=SUM(A1:A9) what is the total" in exported
 
+    def test_export_csv_keeps_plain_negative_numbers(self, client, db_session):
+        """A plain negative number is not a formula and stays unprefixed."""
+        from models import Question
+
+        db_session.add(Question(job_title="SWE", question_text="Score delta: -5 points", question_type="technical"))
+        db_session.commit()
+        response = client.get("/api/questions/export", params={"format": "csv"})
+        assert response.status_code == 200
+        rows = self._csv_rows(response)
+        assert rows[1][2] == "Score delta: -5 points"
+
     def test_export_respects_search_and_type_filters(self, client, db_session):
         self._seed(db_session)
         response = client.get("/api/questions/export", params={"format": "json", "q": "roadmap"})
@@ -1718,6 +1791,37 @@ class TestExportQuestions:
         response = client.get("/api/questions/export", params={"format": "csv", "flagged_only": "true"})
         rows = self._csv_rows(response)
         assert len(rows) == 2
+
+    def test_export_paginates_with_skip_and_limit(self, client, db_session):
+        """``skip``/``limit`` bound the export like the list endpoint (M4)."""
+        from datetime import datetime
+
+        from models import Question
+
+        stamps = [
+            datetime(2026, 1, 1, 12, 0, 0),
+            datetime(2026, 1, 2, 12, 0, 0),
+            datetime(2026, 1, 3, 12, 0, 0),
+        ]
+        for index, stamp in enumerate(stamps):
+            db_session.add(
+                Question(
+                    job_title=f"Role {index}",
+                    question_text=f"Export pagination probe number {index}",
+                    question_type="technical",
+                    created_at=stamp,
+                )
+            )
+        db_session.commit()
+        response = client.get(
+            "/api/questions/export",
+            params={"format": "json", "skip": 1, "limit": 1},
+        )
+        assert response.status_code == 200
+        payload = json.loads(response.text)
+        assert len(payload) == 1
+        # Ordered by created_at desc: [2, 1, 0]; skip=1, limit=1 -> row 1.
+        assert payload[0]["job_title"] == "Role 1"
 
     def test_export_invalid_format(self, client):
         response = client.get("/api/questions/export", params={"format": "xml"})
@@ -1812,6 +1916,19 @@ class TestImportQuestions:
         assert response.status_code == 400
         assert "at least one" in response.json()["detail"]
 
+    def test_import_rejects_oversized_payload(self, client):
+        """A payload over 1000 entries is rejected with a 400 (M3)."""
+        user = register(client)
+        payload = [dict(TestImportQuestions.VALID) for _ in range(1001)]
+        response = client.post(
+            "/api/questions/import",
+            json=payload,
+            headers=auth_headers(user["token"]),
+        )
+        assert response.status_code == 400
+        assert "1000" in response.json()["detail"]
+        assert client.get("/api/questions/").json() == []
+
     def test_import_non_array_payload(self, client):
         user = register(client)
         response = client.post(
@@ -1866,6 +1983,34 @@ class TestImportQuestions:
         # Only the healthy entry reached the database.
         assert len(client.get("/api/questions/").json()) == 1
 
+    def test_import_failed_entry_is_not_reflushed_by_final_commit(self, client, db_session, monkeypatch):
+        """A failed entry must not be re-flushed by the final commit (L8)."""
+        from models import Question
+
+        user = register(client)
+        real_flush = db_session.flush
+
+        def failing_flush(*args, **kwargs):
+            # Every flush carrying a pending question fails, so the
+            # final commit can only succeed if the failed entry was
+            # expunged from the session.
+            if any(isinstance(obj, Question) for obj in db_session.new):
+                raise IntegrityError("INSERT", {}, Exception("duplicate key value"))
+            return real_flush(*args, **kwargs)
+
+        monkeypatch.setattr(db_session, "flush", failing_flush)
+        response = client.post(
+            "/api/questions/import",
+            json=[self.VALID],
+            headers=auth_headers(user["token"]),
+        )
+        assert response.status_code == 200
+        summary = response.json()
+        assert summary["imported"] == 0
+        assert summary["skipped"] == 1
+        assert "duplicate key value" in summary["errors"][0]["error"]
+        assert client.get("/api/questions/").json() == []
+
     def test_import_commit_failure_returns_500(self, client, db_session, monkeypatch):
         from models import UserSession
 
@@ -1906,7 +2051,11 @@ class TestImportExportHelpers:
         [
             ("=SUM(A1:A9)", "'=SUM(A1:A9)"),
             ("+1", "'+1"),
-            ("-1", "'-1"),
+            ("-1", "-1"),
+            ("-5", "-5"),
+            ("-1.25", "-1.25"),
+            ("-x", "'-x"),
+            ("- 1", "'- 1"),
             ("@cmd", "'@cmd"),
             ("\tleading tab", "'\tleading tab"),
             ("\rleading cr", "'\rleading cr"),

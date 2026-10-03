@@ -65,6 +65,8 @@ class InterviewService:
             user_id=user_id,
             context={"interview_session_id": session.id, "event": "session_started"},
         )
+        # record_action only stages the history entry; persist it.
+        db.commit()
         db.refresh(session)
         return session
 
@@ -131,6 +133,8 @@ class InterviewService:
                 user_id=user_id,
                 context={"interview_session_id": session.id, "event": "session_completed"},
             )
+            # record_action only stages the history entry; persist it.
+            db.commit()
             return {"completed": True, "summary": summary, "evaluation": evaluation}
 
         next_question = self._next_question(db, session)
@@ -143,6 +147,8 @@ class InterviewService:
             user_id=user_id,
             context={"interview_session_id": session.id, "event": "question_asked"},
         )
+        # record_action only stages the history entry; persist it.
+        db.commit()
         return {
             "completed": False,
             "next_question": next_question,
