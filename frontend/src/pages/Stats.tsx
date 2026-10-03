@@ -10,7 +10,29 @@ import {
   Flag,
   Target,
   Award,
+  Activity,
+  BarChart2,
+  Radar as RadarIcon,
+  LineChart as LineChartIcon,
 } from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { statsApi, parseAxiosError } from '../services/api';
 import { Stats } from '../types';
 import { ErrorResponse } from '../services/errorHandler';
@@ -18,6 +40,111 @@ import StatCard from '../components/StatCard';
 import Alert from '../components/Alert';
 import EmptyState from '../components/EmptyState';
 import { Skeleton, SkeletonStatCard } from '../components/ui/Skeleton';
+
+type SignupPoint = Stats['signups_last_7_days'][number];
+type EvaluationPoint = Stats['evaluations_last_7_days'][number];
+type DifficultyPoint = Stats['difficulty_distribution'][number];
+type TrendPoint = Stats['average_score_trend'][number];
+
+/** Height of every chart body. It matches `min-h-96` so the EmptyState and the
+ * ResponsiveContainer occupy the same space and swapping between them never
+ * shifts the layout. */
+const CHART_HEIGHT = 384;
+
+const COLORS = {
+  blue: '#3b82f6',
+  emerald: '#10b981',
+  orange: '#f97316',
+  grid: '#e5e7eb',
+  muted: '#9ca3af',
+  label: '#4b5563',
+};
+
+const AXIS_TICK = { fill: COLORS.label, fontSize: 12 };
+
+const TOOLTIP_STYLE = {
+  backgroundColor: '#ffffff',
+  border: '1px solid #e5e7eb',
+  borderRadius: '0.5rem',
+  fontSize: '0.75rem',
+  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+};
+
+/**
+ * Format a `YYYY-MM-DD` bucket key as a short label.
+ *
+ * The value is parsed manually and formatted in UTC so a bucket never slides to
+ * the neighbouring day for users in negative UTC offsets.
+ */
+const formatBucketLabel = (value: string): string => {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) {
+    return value;
+  }
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+
+const toActivitySeries = (signups: SignupPoint[], evaluations: EvaluationPoint[]) =>
+  signups.map((signup, index) => ({
+    label: formatBucketLabel(signup.date),
+    signups: signup.count,
+    evaluations: evaluations[index]?.count ?? 0,
+  }));
+
+const toDifficultySeries = (distribution: DifficultyPoint[]) =>
+  distribution.map((point) => ({
+    label: `Level ${point.difficulty}`,
+    count: point.count,
+  }));
+
+const toTypeSeries = (questionsByType: Record<string, number>) =>
+  Object.entries(questionsByType).map(([type, count]) => ({
+    type: type.charAt(0).toUpperCase() + type.slice(1),
+    questions: count,
+  }));
+
+const toTrendSeries = (trend: TrendPoint[]) =>
+  trend.map((point) => ({
+    label: formatBucketLabel(point.week_start),
+    average_score: point.average_score,
+    count: point.count,
+  }));
+
+interface ChartCardProps {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  iconClassName: string;
+  delay: number;
+  children: React.ReactNode;
+}
+
+const ChartCard: React.FC<ChartCardProps> = ({
+  title,
+  description,
+  icon,
+  iconClassName,
+  delay,
+  children,
+}) => (
+  <motion.div
+    className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft"
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.6, delay }}
+  >
+    <div className="flex items-center space-x-3">
+      <div className={`p-2 rounded-xl ${iconClassName}`}>{icon}</div>
+      <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+    </div>
+    <p className="text-sm text-gray-500 mt-2 mb-6">{description}</p>
+    <div className="min-h-96">{children}</div>
+  </motion.div>
+);
 
 const StatsPage: React.FC = () => {
   const {
@@ -88,6 +215,17 @@ const StatsPage: React.FC = () => {
       />
     );
   }
+
+  // Chart series. Each one is derived from the dense (zero-filled) buckets the
+  // API returns, so a quiet day reads as a real zero rather than a gap.
+  const activitySeries = toActivitySeries(stats.signups_last_7_days, stats.evaluations_last_7_days);
+  const difficultySeries = toDifficultySeries(stats.difficulty_distribution);
+  const typeSeries = toTypeSeries(stats.questions_by_type);
+  const trendSeries = toTrendSeries(stats.average_score_trend);
+
+  const hasQuestions = stats.total_questions > 0;
+  const hasActivity = activitySeries.some((point) => point.signups > 0 || point.evaluations > 0);
+  const hasEvaluations = trendSeries.some((point) => point.count > 0);
 
   return (
     <div className="space-y-8">
@@ -304,6 +442,184 @@ const StatsPage: React.FC = () => {
           </div>
           <p className="text-4xl font-bold mb-2">{stats.flagged_questions}</p>
           <p className="text-orange-100">Questions flagged for review</p>
+        </div>
+      </motion.div>
+
+      {/* Charts */}
+      <motion.div
+        className="space-y-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.8 }}
+      >
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-gray-900">Trends</h2>
+          <p className="text-gray-600 mt-2">
+            How your question bank and interview practice are evolving over time
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <ChartCard
+            title="Questions by Type"
+            description="Share of the question bank per interview type"
+            icon={<RadarIcon className="w-5 h-5 text-blue-600" />}
+            iconClassName="bg-blue-100"
+            delay={0.85}
+          >
+            {hasQuestions ? (
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+                <RadarChart data={typeSeries} outerRadius="70%">
+                  <PolarGrid stroke={COLORS.grid} />
+                  <PolarAngleAxis dataKey="type" tick={AXIS_TICK} />
+                  <Radar
+                    name="Questions"
+                    dataKey="questions"
+                    stroke={COLORS.blue}
+                    strokeWidth={2}
+                    fill={COLORS.blue}
+                    fillOpacity={0.35}
+                  />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState
+                title="No questions yet"
+                message="Generate a question set and the type breakdown will appear here."
+                icon={<RadarIcon className="w-12 h-12 text-gray-400" />}
+              />
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="Difficulty Distribution"
+            description="Question count per difficulty level"
+            icon={<BarChart2 className="w-5 h-5 text-green-600" />}
+            iconClassName="bg-green-100"
+            delay={0.95}
+          >
+            {hasQuestions ? (
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+                <BarChart data={difficultySeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
+                  <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={AXIS_TICK}
+                    axisLine={false}
+                    tickLine={false}
+                    width={40}
+                  />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: '#f3f4f6' }} />
+                  <Bar
+                    dataKey="count"
+                    name="Questions"
+                    fill={COLORS.emerald}
+                    radius={[8, 8, 0, 0]}
+                    maxBarSize={64}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState
+                title="No questions yet"
+                message="Generate a question set to see how the levels are spread."
+                icon={<BarChart2 className="w-12 h-12 text-gray-400" />}
+              />
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="Last 7 Days"
+            description="Daily signups and recorded answer evaluations"
+            icon={<Activity className="w-5 h-5 text-orange-600" />}
+            iconClassName="bg-orange-100"
+            delay={1.05}
+          >
+            {hasActivity ? (
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+                <AreaChart data={activitySeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
+                  <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={AXIS_TICK}
+                    axisLine={false}
+                    tickLine={false}
+                    width={40}
+                  />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '0.75rem' }} />
+                  <Area
+                    type="monotone"
+                    dataKey="signups"
+                    name="Signups"
+                    stroke={COLORS.blue}
+                    strokeWidth={2}
+                    fill={COLORS.blue}
+                    fillOpacity={0.25}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="evaluations"
+                    name="Evaluations"
+                    stroke={COLORS.orange}
+                    strokeWidth={2}
+                    fill={COLORS.orange}
+                    fillOpacity={0.25}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState
+                title="No activity yet"
+                message="Signups and evaluations from the past week will show up here."
+                icon={<Activity className="w-12 h-12 text-gray-400" />}
+              />
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="Score Trend"
+            description="Weekly average answer score over the last 8 weeks"
+            icon={<LineChartIcon className="w-5 h-5 text-blue-600" />}
+            iconClassName="bg-blue-100"
+            delay={1.15}
+          >
+            {hasEvaluations ? (
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+                <LineChart data={trendSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} vertical={false} />
+                  <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis
+                    domain={[0, 10]}
+                    tick={AXIS_TICK}
+                    axisLine={false}
+                    tickLine={false}
+                    width={40}
+                  />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Line
+                    type="monotone"
+                    dataKey="average_score"
+                    name="Average score"
+                    stroke={COLORS.emerald}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                    connectNulls={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState
+                title="No evaluations yet"
+                message="Complete a mock interview and your weekly score trend will appear here."
+                icon={<LineChartIcon className="w-12 h-12 text-gray-400" />}
+              />
+            )}
+          </ChartCard>
         </div>
       </motion.div>
     </div>

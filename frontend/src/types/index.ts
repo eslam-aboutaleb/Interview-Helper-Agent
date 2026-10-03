@@ -35,6 +35,14 @@ export interface Stats {
   average_difficulty: number;
   flagged_questions: number;
   total_question_sets: number;
+  /** Signup counts for the last 7 days, ascending by date. */
+  signups_last_7_days: { date: string; count: number }[];
+  /** Daily evaluation count and mean score; `average_score` is null when the day has none. */
+  evaluations_last_7_days: { date: string; average_score: number | null; count: number }[];
+  /** One entry per difficulty level, always covering levels 1-5. */
+  difficulty_distribution: { difficulty: number; count: number }[];
+  /** Weekly mean score over the last 8 ISO weeks; empty when the window has no evaluations. */
+  average_score_trend: { week_start: string; average_score: number | null; count: number }[];
 }
 
 export interface QuestionGenerateRequest {

@@ -588,6 +588,45 @@ class ModelAnswerResponse(BaseModel):
 class StatsResponse(BaseModel):
     """Schema for platform statistics response"""
 
+    # Time-series helpers for the dashboard charts. Bucket keys are always
+    # ``YYYY-MM-DD`` strings so the payload is identical whether the underlying
+    # bucket expression returned a PostgreSQL timestamptz or SQLite text.
+    class DailyCount(BaseModel):
+        """One day of a daily count series."""
+
+        date: str = Field(..., description="UTC calendar day the bucket covers (YYYY-MM-DD)", example="2026-10-03")
+        count: int = Field(0, ge=0, description="Number of records in the bucket", example=7)
+
+    class DailyEvaluationCount(BaseModel):
+        """One day of the evaluation series, including the mean overall score."""
+
+        date: str = Field(..., description="UTC calendar day the bucket covers (YYYY-MM-DD)", example="2026-10-03")
+        average_score: Optional[float] = Field(
+            None,
+            ge=0.0,
+            le=10.0,
+            description="Mean overall score for the day, null when the day has no evaluations",
+        )
+        count: int = Field(0, ge=0, description="Number of evaluations recorded on the day", example=4)
+
+    class DifficultyCount(BaseModel):
+        """Question count for a single difficulty level."""
+
+        difficulty: int = Field(..., ge=1, le=5, description="Difficulty level (1-5)", example=3)
+        count: int = Field(0, ge=0, description="Questions recorded at this difficulty level", example=12)
+
+    class WeeklyScore(BaseModel):
+        """One ISO week of the average score trend."""
+
+        week_start: str = Field(..., description="Monday starting the ISO week (YYYY-MM-DD)", example="2026-09-28")
+        average_score: Optional[float] = Field(
+            None,
+            ge=0.0,
+            le=10.0,
+            description="Mean overall score for the week, null when the week has no evaluations",
+        )
+        count: int = Field(0, ge=0, description="Evaluations recorded during the week", example=9)
+
     total_questions: int = Field(..., ge=0, description="Total number of questions in the system", example=150)
     questions_by_type: dict = Field(
         ..., description="Count of questions grouped by type", example={"technical": 90, "behavioral": 60}
@@ -606,6 +645,25 @@ class StatsResponse(BaseModel):
     )
     flagged_questions: int = Field(..., ge=0, description="Total number of flagged questions", example=5)
     total_question_sets: int = Field(..., ge=0, description="Total number of question sets", example=10)
+    signups_last_7_days: List[DailyCount] = Field(
+        default_factory=list,
+        description="Signup counts for each of the last 7 days, zero-filled and ascending by date",
+    )
+    evaluations_last_7_days: List[DailyEvaluationCount] = Field(
+        default_factory=list,
+        description="Evaluation count and mean score for each of the last 7 days, zero-filled and ascending by date",
+    )
+    difficulty_distribution: List[DifficultyCount] = Field(
+        default_factory=list,
+        description="Question count per difficulty level, always one entry per level 1-5",
+    )
+    average_score_trend: List[WeeklyScore] = Field(
+        default_factory=list,
+        description=(
+            "Mean overall score per ISO week over the last 8 weeks, ascending by week start. Empty when the "
+            "window contains no evaluations."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_stats(self):
