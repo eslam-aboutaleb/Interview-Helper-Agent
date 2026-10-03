@@ -102,16 +102,16 @@ CONCEPTS = {
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extract text from a PDF using PyPDF2 (best-effort)."""
+    """Extract text from a PDF using pypdf (best-effort)."""
     try:
         from io import BytesIO
-        from PyPDF2 import PdfReader
+        from pypdf import PdfReader
 
         reader = PdfReader(BytesIO(file_bytes))
         pages = [page.extract_text() or "" for page in reader.pages]
         return "\n".join(pages)
     except ImportError:
-        logger.warning("PyPDF2 not installed; cannot parse PDF")
+        logger.warning("pypdf not installed; cannot parse PDF")
         return ""
     except Exception as e:
         logger.error(f"PDF parsing failed: {e}")

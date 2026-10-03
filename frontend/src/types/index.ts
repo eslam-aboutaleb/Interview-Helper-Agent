@@ -123,3 +123,20 @@ export interface ModelAnswerResponse {
   question: string;
   model_answer: string | null;
 }
+
+export interface UserDocument {
+  id: number;
+  user_id: number;
+  document_type: string;
+  filename: string | null;
+  parsed_metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface SkillGap {
+  match_percentage: number;
+  matched_skills: string[];
+  missing_skills: string[];
+  extra_skills: string[];
+  summary: string;
+}

@@ -1,6 +1,15 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Brain, Home, MessageSquare, Plus, BarChart3, Video } from 'lucide-react';
+import {
+  Brain,
+  Home,
+  MessageSquare,
+  Plus,
+  BarChart3,
+  Video,
+  FileText,
+  Sparkles,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Header: React.FC = () => {
@@ -12,6 +21,8 @@ const Header: React.FC = () => {
     { path: '/generate', label: 'Generate', icon: Plus },
     { path: '/interview', label: 'Mock Interview', icon: Video },
     { path: '/stats', label: 'Statistics', icon: BarChart3 },
+    { path: '/documents', label: 'Documents', icon: FileText },
+    { path: '/skill-gap', label: 'Skill Gap', icon: Sparkles },
   ];
 
   const isActive = (path: string) => location.pathname === path;

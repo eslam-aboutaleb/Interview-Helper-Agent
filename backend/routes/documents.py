@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.post("/upload", response_model=UserDocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
-    document_type: str = Query(..., regex="^(resume|jd)$"),
+    document_type: str = Query(..., pattern="^(resume|jd)$"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -60,7 +60,7 @@ async def upload_document(
 
 @router.get("/", response_model=list[UserDocumentResponse], status_code=status.HTTP_200_OK)
 async def list_documents(
-    document_type: Optional[str] = Query(None, regex="^(resume|jd)$"),
+    document_type: Optional[str] = Query(None, pattern="^(resume|jd)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

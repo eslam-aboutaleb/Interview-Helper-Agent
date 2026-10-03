@@ -23,11 +23,20 @@ load_dotenv()
 
 
 def ensure_db_initialized() -> None:
-    """Initialize database tables on first use (lazy initialization)."""
+    """Initialize database tables on first use (lazy initialization).
+
+    This is a development fallback. In production, schema changes are
+    managed with Alembic migrations (``alembic upgrade head``); this
+    ``create_all`` call only ensures tables exist when migrations have
+    not been run (e.g. local development against a fresh database).
+    """
     try:
-        logger.info("Creating database tables...")
+        logger.info(
+            "Ensuring database tables exist (create_all fallback; "
+            "use 'alembic upgrade head' for managed schema changes)..."
+        )
         Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
+        logger.info("Database tables ensured successfully")
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
@@ -56,7 +65,7 @@ app = FastAPI(
 )
 
 # CORS middleware - origins configurable via environment
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:80,http://localhost:3000")
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:80,http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in cors_origins.split(",") if origin.strip()],

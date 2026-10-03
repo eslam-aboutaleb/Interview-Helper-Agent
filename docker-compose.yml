@@ -13,7 +13,10 @@ services:
       - '${DB_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # Schema is managed by Alembic migrations (backend/alembic/),
+      # applied with `alembic upgrade head` — see README. The old
+      # db/init.sql provisioning script is intentionally not mounted
+      # so fresh volumes start empty for migrations.
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-postgres}']
       interval: 30s

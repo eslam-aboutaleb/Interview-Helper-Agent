@@ -1,5 +1,14 @@
 # Development compose file with bind mounts for FAST live reload
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Dev ports:
+#   - Frontend (Vite dev server + HMR): http://localhost:5173
+#     (override with FRONTEND_DEV_PORT)
+#   - Backend (uvicorn --reload): http://localhost:8001
+#     (override with BACKEND_PORT; mapped by the base file)
+#
+# Note: when running the Vite dev server against a separately-running
+# backend, add http://localhost:5173 to CORS_ORIGINS.
 
 services:
   backend:
@@ -13,19 +22,27 @@ services:
              python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend:
+    # Override the nginx production image with a Node image so we can run
+    # the Vite dev server with hot module replacement.
+    image: node:20-alpine
+    working_dir: /app
     volumes:
-      # Mount source code for live Vite hot reload
-      - ./frontend/src:/app/src
-      - ./frontend/index.html:/app/index.html
-      - ./frontend/package.json:/app/package.json
-      - ./frontend/tsconfig.json:/app/tsconfig.json
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js
-      - ./frontend/postcss.config.js:/app/postcss.config.js
-      # Exclude node_modules to avoid permission issues
+      # Mount the whole frontend project for live Vite HMR
+      - ./frontend:/app
+      # Keep container-installed node_modules out of the host mount
       - /app/node_modules
-    command: npm start
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    # Replace the production port mapping (80) with the Vite dev port.
+    ports: !override
+      - '${FRONTEND_DEV_PORT:-5173}:5173'
     environment:
       - CHOKIDAR_USEPOLLING=true
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider http://127.0.0.1:5173/ || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres_data:

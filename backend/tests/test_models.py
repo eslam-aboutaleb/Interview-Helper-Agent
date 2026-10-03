@@ -9,11 +9,14 @@ from sqlalchemy.orm import sessionmaker
 from database import Base
 from models import (
     AnswerEvaluation,
+    InterviewMessage,
     InterviewSession,
     Question,
     QuestionHistory,
+    QuestionSet,
     User,
     UserDocument,
+    UserRating,
     UserSession,
 )
 
@@ -209,3 +212,167 @@ class TestAnswerEvaluationModel:
         db.commit()
         assert evaluation.id is not None
         assert evaluation.overall_score == 7.5
+
+
+class TestModelReprMethods:
+    """Cover the __repr__ method of every model."""
+
+    def test_user_session_repr(self):
+        s = UserSession(
+            user_id=1,
+            token_hash="hash",
+            expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        assert "UserSession" in repr(s)
+
+    def test_user_document_repr(self):
+        d = UserDocument(user_id=1, document_type="resume", content_text="text")
+        assert "UserDocument" in repr(d)
+
+    def test_interview_session_repr(self):
+        s = InterviewSession(
+            user_id=1,
+            job_title="SWE",
+            session_type="technical",
+            difficulty=3,
+            target_difficulty=3,
+            max_turns=7,
+            status="active",
+        )
+        assert "InterviewSession" in repr(s)
+
+    def test_interview_message_repr(self):
+        m = InterviewMessage(session_id=1, role="interviewer", content="hello")
+        assert "InterviewMessage" in repr(m)
+
+    def test_answer_evaluation_repr(self):
+        e = AnswerEvaluation(session_id=1, user_id=1, overall_score=8.0)
+        assert "AnswerEvaluation" in repr(e)
+
+    def test_question_history_repr(self):
+        h = QuestionHistory(user_id=1, action="viewed")
+        assert "QuestionHistory" in repr(h)
+
+    def test_question_repr(self):
+        q = Question(
+            job_title="SWE",
+            question_text="Explain how a hash table works?",
+            question_type="technical",
+        )
+        assert "Question" in repr(q)
+
+    def test_question_set_repr(self):
+        qs = QuestionSet(name="Core set", job_title="SWE", question_ids="[1, 2]")
+        assert "QuestionSet" in repr(qs)
+
+    def test_user_rating_repr(self):
+        r = UserRating(question_id=1, rating=4.5)
+        assert "UserRating" in repr(r)
+
+
+class TestQuestionValidatorBranches:
+    def _valid(self, **overrides):
+        data = dict(
+            job_title="SWE",
+            question_text="Explain how a hash table works?",
+            question_type="technical",
+        )
+        data.update(overrides)
+        return Question(**data)
+
+    def test_job_title_too_long(self):
+        with pytest.raises(ValueError):
+            self._valid(job_title="A" * 101)
+
+    def test_job_title_invalid_characters(self):
+        with pytest.raises(ValueError):
+            self._valid(job_title="SWE!!!")
+
+    def test_question_text_too_long(self):
+        with pytest.raises(ValueError):
+            self._valid(question_text="A" * 2001)
+
+    def test_difficulty_none_defaults_to_one(self):
+        q = self._valid(difficulty=None)
+        assert q.difficulty == 1
+
+    def test_difficulty_out_of_range(self):
+        with pytest.raises(ValueError):
+            self._valid(difficulty=6)
+
+    def test_tags_blank_returns_none(self):
+        q = self._valid(tags="   ")
+        assert q.tags is None
+
+    def test_tags_too_long(self):
+        with pytest.raises(ValueError):
+            self._valid(tags="A" * 501)
+
+    def test_tags_invalid_format(self):
+        with pytest.raises(ValueError):
+            self._valid(tags="bad!!!tag")
+
+
+class TestQuestionSetValidatorBranches:
+    def _valid(self, **overrides):
+        data = dict(name="Core set", job_title="SWE", question_ids="[1, 2]")
+        data.update(overrides)
+        return QuestionSet(**data)
+
+    def test_name_empty(self):
+        with pytest.raises(ValueError):
+            self._valid(name="   ")
+
+    def test_description_blank_returns_none(self):
+        qs = self._valid(description="   ")
+        assert qs.description is None
+
+    def test_description_too_long(self):
+        with pytest.raises(ValueError):
+            self._valid(description="A" * 1001)
+
+    def test_job_title_empty(self):
+        with pytest.raises(ValueError):
+            self._valid(job_title="  ")
+
+    def test_job_title_short(self):
+        with pytest.raises(ValueError):
+            self._valid(job_title="A")
+
+    def test_job_title_too_long(self):
+        with pytest.raises(ValueError):
+            self._valid(job_title="A" * 101)
+
+    def test_question_ids_empty(self):
+        with pytest.raises(ValueError):
+            self._valid(question_ids="  ")
+
+    def test_question_ids_invalid_json(self):
+        with pytest.raises(ValueError):
+            self._valid(question_ids="not-json")
+
+
+class TestUserRatingValidatorBranches:
+    def test_question_id_null(self):
+        with pytest.raises(ValueError):
+            UserRating(question_id=None, rating=4.0)
+
+    def test_question_id_non_positive(self):
+        with pytest.raises(ValueError):
+            UserRating(question_id=0, rating=4.0)
+
+    def test_rating_null(self):
+        with pytest.raises(ValueError):
+            UserRating(question_id=1, rating=None)
+
+    def test_rating_out_of_range(self):
+        with pytest.raises(ValueError):
+            UserRating(question_id=1, rating=5.5)
+
+    def test_feedback_blank_returns_none(self):
+        r = UserRating(question_id=1, rating=4.0, feedback="   ")
+        assert r.feedback is None
+
+    def test_feedback_too_long(self):
+        with pytest.raises(ValueError):
+            UserRating(question_id=1, rating=4.0, feedback="A" * 1001)

@@ -13,6 +13,8 @@ import {
   InterviewTurnResponse,
   ModelAnswerRequest,
   ModelAnswerResponse,
+  UserDocument,
+  SkillGap,
 } from '../types';
 import { parseAxiosError } from './errorHandler';
 
@@ -112,6 +114,34 @@ export const interviewsApi = {
 export const fetchQuestionSets = async (): Promise<QuestionSet[]> => {
   const response = await questionSetsApi.getAll();
   return response.data;
+};
+
+export type DocumentType = 'resume' | 'jd';
+
+export const documentsApi = {
+  // The shared `api` instance defaults to Content-Type: application/json.
+  // For multipart uploads the header must be left unset so the browser can
+  // generate the multipart boundary itself.
+  upload: (documentType: DocumentType, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<UserDocument>('/api/documents/upload', form, {
+      params: { document_type: documentType },
+      headers: { 'Content-Type': undefined },
+    });
+  },
+
+  list: (documentType?: DocumentType) =>
+    api.get<UserDocument[]>('/api/documents/', {
+      params: documentType ? { document_type: documentType } : undefined,
+    }),
+
+  remove: (documentId: number) => api.delete<void>(`/api/documents/${documentId}`),
+
+  skillGap: (resumeId: number, jdId: number) =>
+    api.post<SkillGap>('/api/documents/skill-gap', null, {
+      params: { resume_id: resumeId, jd_id: jdId },
+    }),
 };
 
 export { parseAxiosError };

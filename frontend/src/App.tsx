@@ -11,6 +11,8 @@ import Questions from './pages/Questions';
 import Generate from './pages/Generate';
 import Stats from './pages/Stats';
 import Interview from './pages/Interview';
+import Documents from './pages/Documents';
+import SkillGap from './pages/SkillGap';
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
                 <Route path="/generate" element={<Generate />} />
                 <Route path="/interview" element={<Interview />} />
                 <Route path="/stats" element={<Stats />} />
+                <Route path="/documents" element={<Documents />} />
+                <Route path="/skill-gap" element={<SkillGap />} />
               </Routes>
             </main>
             <Toaster

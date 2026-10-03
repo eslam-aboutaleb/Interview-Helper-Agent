@@ -132,3 +132,33 @@ class TestEngineConfiguration:
     def test_session_local_configured(self):
         assert database.SessionLocal is not None
         assert database.Base is not None
+
+
+class TestConnectionEventListeners:
+    """Cover the SQLAlchemy connection lifecycle event listeners."""
+
+    def test_receive_connect_error_path(self):
+        with mock.patch("database.logger") as mock_logger:
+            mock_logger.debug.side_effect = RuntimeError("log boom")
+            database.receive_connect(None, None)
+            mock_logger.warning.assert_called_once()
+
+    def test_receive_connect_success_path(self):
+        with mock.patch("database.logger") as mock_logger:
+            database.receive_connect(None, None)
+            mock_logger.debug.assert_called_once()
+
+    def test_receive_close_error_path(self):
+        with mock.patch("database.logger") as mock_logger:
+            mock_logger.debug.side_effect = RuntimeError("log boom")
+            database.receive_close(None, None)
+            mock_logger.warning.assert_called_once()
+
+    def test_receive_close_success_path(self):
+        with mock.patch("database.logger") as mock_logger:
+            database.receive_close(None, None)
+            mock_logger.debug.assert_called_once()
+
+    def test_receive_engine_disposed(self, caplog):
+        database.receive_engine_disposed(database.engine)
+        assert any("engine disposed" in r.message for r in caplog.records)

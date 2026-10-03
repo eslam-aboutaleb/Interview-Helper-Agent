@@ -23,7 +23,7 @@ ENV VIRTUAL_ENV="/app/venv"
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
-    pip install gunicorn uvicorn python-multipart && \
+    pip install --no-cache-dir gunicorn && \
     useradd -m appuser && \
     chown -R appuser:appuser /app
 

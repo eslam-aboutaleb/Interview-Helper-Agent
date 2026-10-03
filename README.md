@@ -263,6 +263,74 @@ The platform includes comprehensive error handling and validation:
 - **Error Responses**: Structured error messages with proper HTTP status codes
 - **Health Checks**: System health monitoring endpoints
 
+## Dependency Security
+
+Backend pins are kept current (see `backend/requirements.txt`). On the
+frontend, `npm audit fix` plus targeted upgrades (`react-router-dom` 7.x,
+an `esbuild` override, and `vite` 6.4.3) clear all runtime and most
+build-tool advisories.
+
+**Known remaining advisories (5, all `devDependencies`, build-time only):**
+`tailwindcss` 3.4.19 → `chokidar` → `micromatch` → `braces` /
+`fast-glob` (stack-exhaustion DoS in the Tailwind JIT compiler).
+`tailwindcss` 3.4.19 is the final 3.x release, so the only fix is the
+Tailwind CSS 4.x rewrite (CSS-first `@theme` config, drops
+`tailwind.config.js`). That is a breaking, repo-wide change and is
+intentionally deferred — it does **not** affect the production bundle
+(`dist/`) or the running application, only local `npm run build` /
+`npm run dev` tooling. Track it as a follow-up: "Migrate frontend to
+Tailwind CSS 4".
+
+## Database Migrations (Alembic)
+
+Schema changes are managed with **Alembic** migrations
+(`backend/alembic/`). The application's SQLAlchemy models
+(`backend/models.py`) are the source of truth; migrations are
+generated from them and applied with `alembic upgrade head`.
+
+`Base.metadata.create_all()` still runs on startup as a **dev
+fallback** (it logs that it is a fallback), so a fresh local
+database works without running migrations manually. In
+production, always use migrations.
+
+### Workflow
+
+```bash
+cd backend
+
+# 1. Create a new migration from model changes
+alembic revision --autogenerate -m "describe the change"
+
+# 2. Review the generated file in alembic/versions/
+
+# 3. Apply it
+alembic upgrade head
+
+# Check status
+alembic current
+```
+
+### Fresh database (Docker)
+
+```bash
+# Start an empty database
+docker compose -f docker-compose.yml up -d db
+
+# Apply all migrations (creates every table)
+docker compose -f docker-compose.yml run --rm backend \
+    /app/venv/bin/alembic upgrade head
+
+# Then start the rest of the stack
+docker compose -f docker-compose.yml up -d
+```
+
+> **Note:** `db/init.sql` is no longer mounted into the postgres
+> image. Fresh volumes start empty so Alembic owns the schema.
+> For an existing database that was created with
+> `create_all()` (no `alembic_version` table), run
+> `alembic stamp head` once to bring it under migration
+> management before using `alembic upgrade`.
+
 ## Deployment
 
 For production deployment:

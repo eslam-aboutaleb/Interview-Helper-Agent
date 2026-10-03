@@ -1,0 +1,21 @@
+[run]
+source = .
+omit =
+    .venv/*
+    venv/*
+    tests/*
+    alembic/*
+    __pycache__/*
+
+[report]
+# Coverage gate: the full suite must keep total line coverage at or
+# above 90%. Enforced by `coverage report`, which exits non-zero below
+# this threshold. See scripts/check_coverage.sh.
+fail_under = 90
+show_missing = true
+skip_covered = false
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    \.\.\.

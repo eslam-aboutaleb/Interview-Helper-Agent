@@ -1,11 +1,18 @@
 """Tests for core services that do not require the LLM."""
 
+import sys
+from io import BytesIO
+from unittest import mock
+
 from services.evaluation_service import EvaluationService
 from services.document_service import (
     parse_resume,
     parse_job_description,
     compute_skill_gap,
     extract_years_of_experience,
+    extract_text,
+    extract_text_from_pdf,
+    extract_text_from_docx,
 )
 
 
@@ -99,3 +106,54 @@ class TestDocumentService:
 
     def test_extract_years_picks_max(self):
         assert extract_years_of_experience("3 years at Google, 7 years at Meta") == 7
+
+
+class TestDocumentExtraction:
+    def test_extract_text_from_pdf_success(self):
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        writer.add_blank_page(width=200, height=200)
+        buf = BytesIO()
+        writer.write(buf)
+        result = extract_text_from_pdf(buf.getvalue())
+        assert isinstance(result, str)
+
+    def test_extract_text_from_docx_success(self):
+        from docx import Document
+
+        doc = Document()
+        doc.add_paragraph("Hello world")
+        buf = BytesIO()
+        doc.save(buf)
+        result = extract_text_from_docx(buf.getvalue())
+        assert "Hello world" in result
+
+    def test_extract_text_dispatch_pdf(self):
+        # Invalid PDF bytes fall through to the generic error handler.
+        result = extract_text("resume.pdf", b"not a real pdf")
+        assert isinstance(result, str)
+
+    def test_extract_text_dispatch_docx(self):
+        result = extract_text("resume.docx", b"not a real docx")
+        assert isinstance(result, str)
+
+    def test_extract_text_dispatch_plain_text(self):
+        result = extract_text("notes.txt", b"plain text content")
+        assert result == "plain text content"
+
+    def test_extract_text_from_pdf_import_error(self):
+        with mock.patch.dict(sys.modules, {"pypdf": None}):
+            assert extract_text_from_pdf(b"fake") == ""
+
+    def test_extract_text_from_docx_import_error(self):
+        with mock.patch.dict(sys.modules, {"docx": None}):
+            assert extract_text_from_docx(b"fake") == ""
+
+    def test_extract_years_of_experience_value_error(self):
+        # Force int() to fail inside the parsing loop.
+        with mock.patch("services.document_service.re.finditer") as mock_find:
+            fake_match = mock.MagicMock()
+            fake_match.group.return_value = "not-a-number"
+            mock_find.return_value = [fake_match]
+            assert extract_years_of_experience("anything") is None

@@ -1,0 +1,28 @@
+# Run the project's pre-commit hooks in CI.
+#
+# Mirrors .pre-commit-config.yaml (ruff, ruff-format,
+# prettier, and general file-hygiene hooks) so a PR cannot
+# merge with formatting or hygiene violations.
+#
+# The pre-commit action version is pinned to a major tag;
+# pin to a full commit SHA for production hardening (see
+# CONTRIBUTING.md).
+
+name: pre-commit
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
