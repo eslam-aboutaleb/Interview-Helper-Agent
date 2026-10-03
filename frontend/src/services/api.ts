@@ -6,6 +6,9 @@ import {
   QuestionGenerateRequest,
   QuestionCreateRequest,
   QuestionUpdateRequest,
+  QuestionExportFormat,
+  QuestionImportSummary,
+  QuestionSearchParams,
   InterviewSessionCreate,
   InterviewSession,
   InterviewMessage,
@@ -53,13 +56,13 @@ export const questionsApi = {
   generate: (data: QuestionGenerateRequest) =>
     api.post<Question[]>('/api/questions/generate', data),
 
-  getAll: (params?: {
-    skip?: number;
-    limit?: number;
-    job_title?: string;
-    question_type?: string;
-    flagged_only?: boolean;
-  }) => api.get<Question[]>('/api/questions/', { params }),
+  getAll: (params?: QuestionSearchParams) => api.get<Question[]>('/api/questions/', { params }),
+
+  // Server-side full-text search across question text, job title and tags.
+  search: (q: string, params?: Omit<QuestionSearchParams, 'q'>) =>
+    api.get<Question[]>('/api/questions/', {
+      params: { ...params, q },
+    }),
 
   getById: (id: number) => api.get<Question>(`/api/questions/${id}`),
 
@@ -71,6 +74,17 @@ export const questionsApi = {
   delete: (id: number) => api.delete(`/api/questions/${id}`),
 
   getJobTitles: () => api.get<string[]>('/api/questions/job-titles/'),
+
+  // Streams the export as a blob so the caller can trigger a file download.
+  export: (format: QuestionExportFormat, params?: Omit<QuestionSearchParams, 'q'>) =>
+    api.get<Blob>('/api/questions/export', {
+      params: { ...params, format },
+      responseType: 'blob',
+    }),
+
+  // The file is parsed by the caller; the endpoint takes a JSON array.
+  importQuestions: (questions: QuestionCreateRequest[]) =>
+    api.post<QuestionImportSummary>('/api/questions/import', questions),
 };
 
 export const questionSetsApi = {

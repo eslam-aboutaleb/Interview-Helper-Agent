@@ -1,9 +1,16 @@
 """End-to-end tests for the questions router, including error paths."""
 
+import csv
+import io
+import json
+from datetime import datetime
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -868,3 +875,555 @@ class TestQuestionErrorPaths:
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(create_question_set(question_set=question_set, db=db_session))
         assert exc_info.value.status_code == 400
+
+
+class TestSearchQuestions:
+    """``q`` full-text search on the questions list endpoint."""
+
+    def _seed(self, db_session):
+        from models import Question
+
+        rows = [
+            ("SWE", "How does a hash table work under collisions?", "technical", "data-structures"),
+            ("PM", "Tell me about a roadmap prioritization tradeoff", "behavioral", "leadership"),
+            ("Data Engineer", "Explain vector indexing in a columnar store", "technical", "databases,indexing"),
+        ]
+        for job_title, text, qtype, tags in rows:
+            db_session.add(
+                Question(
+                    job_title=job_title,
+                    question_text=text,
+                    question_type=qtype,
+                    difficulty=3,
+                    tags=tags,
+                )
+            )
+        db_session.commit()
+
+    def test_search_hits_question_text(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "hash table"})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert "hash table" in data[0]["question_text"]
+
+    def test_search_is_case_insensitive(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "ROADMAP"})
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+
+    def test_search_matches_job_title(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "Data Engineer"})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["job_title"] == "Data Engineer"
+
+    def test_search_matches_tags(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "indexing"})
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+
+    def test_search_miss_returns_empty_list(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "kubernetes"})
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_search_blank_returns_normal_list(self, client, db_session):
+        self._seed(db_session)
+        for blank in ("", "   "):
+            response = client.get("/api/questions/", params={"q": blank})
+            assert response.status_code == 200
+            assert len(response.json()) == 3
+
+    def test_search_special_characters(self, client, db_session):
+        from models import Question
+
+        db_session.add(
+            Question(
+                job_title="SWE",
+                question_text="Explain 100% coverage tooling and C++ builds",
+                question_type="technical",
+            )
+        )
+        db_session.commit()
+        for term in ("100%", "C++", "coverage tooling and", "Explain 100%"):
+            response = client.get("/api/questions/", params={"q": term})
+            assert response.status_code == 200, term
+            assert len(response.json()) == 1, term
+
+    def test_search_like_wildcards_are_escaped(self, client, db_session):
+        """A bare wildcard must be matched literally, not expanded."""
+        self._seed(db_session)
+        for term in ("%", "_"):
+            response = client.get("/api/questions/", params={"q": term})
+            assert response.status_code == 200
+            assert response.json() == []
+
+    def test_search_sql_injection_is_safe(self, client, db_session):
+        self._seed(db_session)
+        payload = "'; DROP TABLE questions;--"
+        response = client.get("/api/questions/", params={"q": payload})
+        assert response.status_code == 200
+        assert response.json() == []
+        # The table must still exist and hold the seeded rows.
+        assert len(client.get("/api/questions/").json()) == 3
+
+    def test_search_sql_injection_variants_are_safe(self, client, db_session):
+        self._seed(db_session)
+        for payload in ("' OR 1=1--", '" OR ""="', "1; DELETE FROM questions"):
+            response = client.get("/api/questions/", params={"q": payload})
+            assert response.status_code == 200, payload
+        assert len(client.get("/api/questions/").json()) == 3
+
+    def test_search_combined_with_other_filters(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "a", "question_type": "behavioral"})
+        assert response.status_code == 200
+        data = response.json()
+        assert [item["question_type"] for item in data] == ["behavioral"]
+
+        response = client.get("/api/questions/", params={"q": "a", "job_title": "PM"})
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+
+    def test_search_rejects_invalid_type_still_400(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "hash", "question_type": "invalid"})
+        assert response.status_code == 400
+
+    def test_search_rejects_overlong_term(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/", params={"q": "x" * 201})
+        assert response.status_code == 422
+
+    def test_search_ordered_by_created_at_desc(self, client, db_session):
+        from models import Question
+
+        stamps = [
+            datetime(2026, 1, 1, 12, 0, 0),
+            datetime(2026, 1, 2, 12, 0, 0),
+            datetime(2026, 1, 3, 12, 0, 0),
+        ]
+        for index, stamp in enumerate(stamps):
+            db_session.add(
+                Question(
+                    job_title="SWE",
+                    question_text=f"Ordering probe number {index}",
+                    question_type="technical",
+                    created_at=stamp,
+                )
+            )
+        db_session.commit()
+        response = client.get("/api/questions/", params={"q": "ordering probe"})
+        assert response.status_code == 200
+        assert [item["created_at"][:10] for item in response.json()] == [
+            "2026-01-03",
+            "2026-01-02",
+            "2026-01-01",
+        ]
+
+    def test_search_db_error(self, client, db_session, monkeypatch):
+        def failing_query(*args, **kwargs):
+            raise RuntimeError("connection lost")
+
+        monkeypatch.setattr(db_session, "query", failing_query)
+        response = client.get("/api/questions/", params={"q": "hash"})
+        assert response.status_code == 500
+
+
+class TestSearchDialectSelection:
+    """The dialect branch must be resolved at query time, not import time."""
+
+    def test_postgres_uses_tsvector_and_websearch_to_tsquery(self):
+        criterion, rank = questions_routes.build_search_filter("postgresql", "hash table")
+        assert rank is not None
+        sql = str(criterion.compile(dialect=postgresql.dialect()))
+        assert "to_tsvector(" in sql
+        assert "websearch_to_tsquery(" in sql
+        assert "ts_rank(" in str(rank.compile(dialect=postgresql.dialect()))
+        for column in ("question_text", "job_title", "tags"):
+            assert column in sql
+
+    def test_postgres_parameterizes_the_search_term(self):
+        criterion, _ = questions_routes.build_search_filter("postgresql", "'; DROP TABLE questions;--")
+        compiled = criterion.compile(dialect=postgresql.dialect())
+        assert "DROP TABLE" not in str(compiled)
+        assert any("DROP TABLE questions;--" in value for value in compiled.params.values())
+
+    def test_postgres_orders_by_relevance(self, db_session):
+        from models import Question
+
+        query, rank = questions_routes.apply_question_filters(
+            db_session.query(Question), dialect_name="postgresql", q="hash"
+        )
+        assert rank is not None
+        sql = str(query.statement.compile(dialect=postgresql.dialect()))
+        assert "ORDER BY ts_rank(" in sql
+        assert "created_at DESC" in sql
+
+    def test_sqlite_falls_back_to_ilike_without_rank(self, db_session):
+        from models import Question
+
+        criterion, rank = questions_routes.build_search_filter("sqlite", "hash")
+        assert rank is None
+        # SQLAlchemy renders ILIKE as lower(col) LIKE lower(?) on SQLite.
+        sql = str(criterion.compile(dialect=sqlite.dialect())).lower()
+        assert " like " in sql
+        assert "lower(questions.question_text)" in sql
+        assert "to_tsvector" not in sql
+        for column in ("question_text", "job_title", "tags"):
+            assert column in sql
+
+        query, rank = questions_routes.apply_question_filters(
+            db_session.query(Question), dialect_name="sqlite", q="hash"
+        )
+        assert rank is None
+        sql = str(query.statement.compile(dialect=sqlite.dialect()))
+        assert "ts_rank" not in sql
+        assert "ORDER BY questions.created_at DESC" in sql
+
+    def test_sqlite_parameterizes_the_search_term(self):
+        criterion, _ = questions_routes.build_search_filter("sqlite", "'; DROP TABLE questions;--")
+        compiled = criterion.compile(dialect=sqlite.dialect())
+        assert "DROP TABLE" not in str(compiled)
+        values = list(compiled.params.values())
+        assert values == ["%'; DROP TABLE questions;--%"] * 3
+
+
+class TestExportQuestions:
+    def _seed(self, db_session):
+        from models import Question
+
+        db_session.add(
+            Question(
+                job_title="SWE",
+                question_text="How does a hash table work under collisions?",
+                question_type="technical",
+                difficulty=3,
+                tags="data-structures",
+            )
+        )
+        db_session.add(
+            Question(
+                job_title="PM",
+                question_text="Tell me about a roadmap prioritization tradeoff",
+                question_type="behavioral",
+                difficulty=2,
+                is_flagged=True,
+            )
+        )
+        db_session.commit()
+
+    def _csv_rows(self, response):
+        return list(csv.reader(io.StringIO(response.text)))
+
+    def test_export_json_returns_valid_array(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/export", params={"format": "json"})
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.headers["content-disposition"] == 'attachment; filename="questions.json"'
+        payload = json.loads(response.text)
+        assert len(payload) == 2
+        assert {item["job_title"] for item in payload} == {"SWE", "PM"}
+        assert {"id", "job_title", "question_text", "question_type", "created_at"} <= set(payload[0])
+
+    def test_export_json_is_the_default_format(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/export")
+        assert response.status_code == 200
+        assert len(json.loads(response.text)) == 2
+
+    def test_export_json_empty_bank(self, client):
+        response = client.get("/api/questions/export", params={"format": "json"})
+        assert response.status_code == 200
+        assert json.loads(response.text) == []
+
+    def test_export_csv_header_and_rows(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/export", params={"format": "csv"})
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        assert response.headers["content-disposition"] == 'attachment; filename="questions.csv"'
+        rows = self._csv_rows(response)
+        assert rows[0] == [
+            "id",
+            "job_title",
+            "question_text",
+            "question_type",
+            "difficulty",
+            "is_flagged",
+            "tags",
+            "created_at",
+        ]
+        assert len(rows) == 3
+        assert {row[1] for row in rows[1:]} == {"SWE", "PM"}
+
+    def test_export_csv_empty_bank_emits_header_only(self, client):
+        response = client.get("/api/questions/export", params={"format": "csv"})
+        assert response.status_code == 200
+        rows = self._csv_rows(response)
+        assert len(rows) == 1
+        assert rows[0][0] == "id"
+
+    def test_export_csv_quotes_embedded_delimiters(self, client, db_session):
+        from models import Question
+
+        db_session.add(
+            Question(
+                job_title="SWE",
+                question_text='Explain "caching", in depth, please',
+                question_type="technical",
+            )
+        )
+        db_session.commit()
+        response = client.get("/api/questions/export", params={"format": "csv"})
+        assert response.status_code == 200
+        rows = self._csv_rows(response)
+        assert rows[1][2] == 'Explain "caching", in depth, please'
+
+    def test_export_csv_sanitizes_formula_injection(self, client, db_session):
+        from models import Question
+
+        for text in (
+            "=SUM(A1:A9) what is the total",
+            "+1234 injection payload here",
+            "-1234 injection payload here",
+            "@SUM(A1:A9) injection payload",
+        ):
+            db_session.add(Question(job_title="SWE", question_text=text, question_type="technical"))
+        db_session.commit()
+
+        response = client.get("/api/questions/export", params={"format": "csv"})
+        assert response.status_code == 200
+        rows = self._csv_rows(response)
+        exported = [row[2] for row in rows[1:]]
+        assert len(exported) == 4
+        for cell in exported:
+            assert cell.startswith("'"), cell
+        # Every exported cell still round-trips through a CSV reader.
+        assert "'=SUM(A1:A9) what is the total" in exported
+
+    def test_export_respects_search_and_type_filters(self, client, db_session):
+        self._seed(db_session)
+        response = client.get("/api/questions/export", params={"format": "json", "q": "roadmap"})
+        payload = json.loads(response.text)
+        assert [item["job_title"] for item in payload] == ["PM"]
+
+        response = client.get("/api/questions/export", params={"format": "json", "question_type": "technical"})
+        assert len(json.loads(response.text)) == 1
+
+        response = client.get("/api/questions/export", params={"format": "csv", "flagged_only": "true"})
+        rows = self._csv_rows(response)
+        assert len(rows) == 2
+
+    def test_export_invalid_format(self, client):
+        response = client.get("/api/questions/export", params={"format": "xml"})
+        assert response.status_code == 400
+        assert "json" in response.json()["detail"]
+
+    def test_export_invalid_question_type(self, client):
+        response = client.get("/api/questions/export", params={"format": "json", "question_type": "invalid"})
+        assert response.status_code == 400
+
+    def test_export_db_error(self, client, db_session, monkeypatch):
+        def failing_query(*args, **kwargs):
+            raise RuntimeError("connection lost")
+
+        monkeypatch.setattr(db_session, "query", failing_query)
+        assert client.get("/api/questions/export").status_code == 500
+
+    def test_export_route_is_not_shadowed_by_dynamic_route(self, client):
+        """``/export`` must resolve before ``/{question_id}`` in the router."""
+        paths = [route.path for route in questions_routes.router.routes]
+        assert paths.index("/export") < paths.index("/{question_id}")
+        response = client.get("/api/questions/export", params={"format": "json"})
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+
+class TestImportQuestions:
+    VALID = {
+        "job_title": "SWE",
+        "question_text": "What is a binary search tree and when do you use it?",
+        "question_type": "technical",
+        "difficulty": 3,
+        "tags": "data-structures",
+    }
+
+    def test_import_valid_payload(self, client, db_session):
+        second = dict(self.VALID, question_text="Describe garbage collection in the JVM runtime")
+        response = client.post("/api/questions/import", json=[self.VALID, second])
+        assert response.status_code == 200
+        assert response.json() == {"imported": 2, "skipped": 0, "errors": []}
+        assert len(client.get("/api/questions/").json()) == 2
+
+    def test_import_partial_invalid_payload(self, client, db_session):
+        payload = [
+            self.VALID,
+            {"job_title": "SWE", "question_text": "short", "question_type": "technical"},
+            {"job_title": "SWE", "question_text": "Which type is invalid here?", "question_type": "invalid"},
+            {"question_text": "Missing the required job title field"},
+            "not-an-object",
+        ]
+        response = client.post("/api/questions/import", json=payload)
+        assert response.status_code == 200
+        summary = response.json()
+        assert summary["imported"] == 1
+        assert summary["skipped"] == 4
+        assert [item["index"] for item in summary["errors"]] == [1, 2, 3, 4]
+        assert "question_text" in summary["errors"][0]["error"]
+        assert "question_type" in summary["errors"][1]["error"]
+        assert "job_title" in summary["errors"][2]["error"]
+        assert summary["errors"][3]["error"] == "entry must be a JSON object"
+        assert len(client.get("/api/questions/").json()) == 1
+
+    def test_import_all_entries_invalid(self, client):
+        payload = [{"job_title": "S", "question_text": "short", "question_type": "nope"}]
+        response = client.post("/api/questions/import", json=payload)
+        assert response.status_code == 200
+        assert response.json()["imported"] == 0
+        assert response.json()["skipped"] == 1
+
+    def test_import_empty_payload(self, client):
+        response = client.post("/api/questions/import", json=[])
+        assert response.status_code == 400
+        assert "at least one" in response.json()["detail"]
+
+    def test_import_non_array_payload(self, client):
+        response = client.post("/api/questions/import", json={"job_title": "SWE"})
+        assert response.status_code == 422
+
+    def test_import_assigns_user_and_records_history(self, client, db_session):
+        user = register(client)
+        response = client.post(
+            "/api/questions/import",
+            json=[self.VALID],
+            headers=auth_headers(user["token"]),
+        )
+        assert response.status_code == 200
+        from models import Question, QuestionHistory
+
+        question = db_session.query(Question).one()
+        assert question.user_id == user["user"]["id"]
+        entries = db_session.query(QuestionHistory).all()
+        assert any(e.action == "created" and e.context["source"] == "import" for e in entries)
+
+    def test_import_isolates_database_failure_per_entry(self, client, db_session, monkeypatch):
+        real_flush = db_session.flush
+        calls = {"count": 0}
+
+        def flaky_flush(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise IntegrityError("INSERT", {}, Exception("duplicate key value"))
+            return real_flush(*args, **kwargs)
+
+        monkeypatch.setattr(db_session, "flush", flaky_flush)
+        second = dict(self.VALID, question_text="Describe garbage collection in the JVM runtime")
+        response = client.post("/api/questions/import", json=[self.VALID, second])
+        assert response.status_code == 200
+        summary = response.json()
+        assert summary["imported"] == 1
+        assert summary["skipped"] == 1
+        assert "duplicate key value" in summary["errors"][0]["error"]
+        # Only the healthy entry reached the database.
+        assert len(client.get("/api/questions/").json()) == 1
+
+    def test_import_commit_failure_returns_500(self, client, db_session, monkeypatch):
+        def failing_commit():
+            raise RuntimeError("commit failed")
+
+        monkeypatch.setattr(db_session, "commit", failing_commit)
+        response = client.post("/api/questions/import", json=[self.VALID])
+        assert response.status_code == 500
+
+    def test_import_route_is_not_shadowed_by_dynamic_route(self, client):
+        paths = [route.path for route in questions_routes.router.routes]
+        assert paths.index("/import") < paths.index("/{question_id}")
+        response = client.post("/api/questions/import", json=[self.VALID])
+        assert response.status_code == 200
+        assert response.json()["imported"] == 1
+
+
+class TestImportExportHelpers:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("=SUM(A1:A9)", "'=SUM(A1:A9)"),
+            ("+1", "'+1"),
+            ("-1", "'-1"),
+            ("@cmd", "'@cmd"),
+            ("\tleading tab", "'\tleading tab"),
+            ("\rleading cr", "'\rleading cr"),
+            ("plain", "plain"),
+            ("", ""),
+            (None, ""),
+            (3, "3"),
+        ],
+    )
+    def test_sanitize_csv_cell(self, value, expected):
+        assert questions_routes.sanitize_csv_cell(value) == expected
+
+    @pytest.mark.parametrize(
+        "term,expected",
+        [
+            ("plain", "plain"),
+            ("100%", "100\\%"),
+            ("a_b", "a\\_b"),
+            ("c:\\path", "c:\\\\path"),
+        ],
+    )
+    def test_escape_like(self, term, expected):
+        assert questions_routes.escape_like(term) == expected
+
+    def test_format_validation_error_readable(self):
+        from pydantic import BaseModel, ValidationError
+
+        class Sample(BaseModel):
+            job_title: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            Sample.model_validate({"job_title": 5})
+        message = questions_routes.format_validation_error(exc_info.value)
+        assert "job_title" in message
+
+    def test_questions_json_chunks_is_a_single_document(self, db_session):
+        from models import Question
+
+        db_session.add(
+            Question(
+                job_title="SWE",
+                question_text="What is a binary search tree and when to use it?",
+                question_type="technical",
+            )
+        )
+        db_session.commit()
+        chunks = list(questions_routes.questions_json_chunks([db_session.query(Question).one()]))
+        assert chunks[0] == "["
+        assert chunks[-1] == "]"
+        assert len(json.loads("".join(chunks))) == 1
+        assert list(questions_routes.questions_json_chunks([])) == ["[", "]"]
+
+    def test_questions_csv_document_quotes_and_sanitizes(self, db_session):
+        from models import Question
+
+        db_session.add(
+            Question(
+                job_title="SWE",
+                question_text='=1+1, "why"',
+                question_type="technical",
+            )
+        )
+        db_session.commit()
+        document = questions_routes.questions_csv_document([db_session.query(Question).one()])
+        rows = list(csv.reader(io.StringIO(document)))
+        assert rows[0][0] == "id"
+        assert rows[1][2] == '\'=1+1, "why"'
+        assert questions_routes.questions_csv_document([]).count("\n") == 1
