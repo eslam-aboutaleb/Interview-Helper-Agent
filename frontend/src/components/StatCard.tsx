@@ -11,13 +11,13 @@ interface StatCardProps {
   index: number;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ 
-  title, 
-  value, 
-  subtitle, 
-  icon: Icon, 
-  color, 
-  index 
+const StatCard: React.FC<StatCardProps> = ({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  color,
+  index,
 }) => {
   const colorClasses = {
     blue: 'from-blue-500 to-blue-600 bg-blue-100',
@@ -36,14 +36,14 @@ const StatCard: React.FC<StatCardProps> = ({
       whileHover={{ y: -2 }}
     >
       <div className="flex items-center space-x-4">
-        <motion.div 
+        <motion.div
           className={`p-3 ${colorClasses[color]} rounded-xl group-hover:scale-110 transition-transform duration-300`}
           whileHover={{ rotate: 5 }}
         >
           <Icon className="w-6 h-6 text-white" />
         </motion.div>
         <div className="flex-1">
-          <motion.p 
+          <motion.p
             className="text-3xl font-bold text-gray-900 mb-1"
             initial={{ scale: 0.8 }}
             animate={{ scale: 1 }}

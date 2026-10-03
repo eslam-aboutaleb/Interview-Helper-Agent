@@ -1,6 +1,5 @@
-from sqlalchemy import create_engine, event, exc
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, event, exc, text
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
 import os
 import logging
@@ -15,18 +14,19 @@ load_dotenv()
 
 class DatabaseConfigError(Exception):
     """Custom exception for database configuration errors"""
+
     pass
 
 
 def _validate_database_url(database_url: str) -> str:
     """Validate database URL for security and correctness.
-    
+
     Args:
         database_url: The database connection URL
-        
+
     Returns:
         Validated database URL
-        
+
     Raises:
         DatabaseConfigError: If URL is invalid or uses insecure defaults
     """
@@ -35,11 +35,11 @@ def _validate_database_url(database_url: str) -> str:
             "DATABASE_URL environment variable is not set. "
             "Please configure it with a valid database connection string."
         )
-    
+
     # Check for default credentials (security risk) - only in production
     # In development/Docker, allow the test credentials
     is_production = os.getenv("ENVIRONMENT") == "production"
-    
+
     if is_production:
         if "password@localhost" in database_url or "postgres:password" in database_url:
             raise DatabaseConfigError(
@@ -49,59 +49,48 @@ def _validate_database_url(database_url: str) -> str:
     else:
         # In development, just warn about default credentials
         if "postgres:password" in database_url:
-            logger.warning(
-                "DATABASE_URL contains test credentials. "
-                "For production, use strong credentials."
-            )
-    
+            logger.warning("DATABASE_URL contains test credentials. " "For production, use strong credentials.")
+
     # Parse and validate URL structure
     try:
         parsed = urlparse(database_url)
     except Exception as e:
         raise DatabaseConfigError(f"Invalid DATABASE_URL format: {str(e)}")
-    
+
     # Validate scheme
-    valid_schemes = {'postgresql', 'postgres', 'mysql', 'sqlite', 'oracle', 'mssql'}
+    valid_schemes = {"postgresql", "postgres", "mysql", "sqlite", "oracle", "mssql"}
     if parsed.scheme not in valid_schemes:
-        raise DatabaseConfigError(
-            f"Unsupported database scheme: {parsed.scheme}. "
-            f"Supported: {valid_schemes}"
-        )
-    
+        raise DatabaseConfigError(f"Unsupported database scheme: {parsed.scheme}. " f"Supported: {valid_schemes}")
+
     # Validate host for non-sqlite databases
-    if parsed.scheme != 'sqlite' and not parsed.netloc:
+    if parsed.scheme != "sqlite" and not parsed.netloc:
         raise DatabaseConfigError(
-            "DATABASE_URL missing hostname. Format should be: "
-            "postgresql://user:password@host:port/database"
+            "DATABASE_URL missing hostname. Format should be: " "postgresql://user:password@host:port/database"
         )
-    
+
     # Warn about missing credentials in production
-    if parsed.scheme in {'postgresql', 'postgres', 'mysql'} and not parsed.password:
-        logger.warning(
-            "DATABASE_URL does not contain a password. "
-            "This may indicate a configuration issue."
-        )
-    
+    if parsed.scheme in {"postgresql", "postgres", "mysql"} and not parsed.password:
+        logger.warning("DATABASE_URL does not contain a password. " "This may indicate a configuration issue.")
+
     return database_url
 
 
 def _get_database_url() -> str:
     """Get and validate database URL from environment.
-    
+
     Returns:
         Validated database URL
-        
+
     Raises:
         DatabaseConfigError: If DATABASE_URL is not configured properly
     """
     database_url = os.getenv("DATABASE_URL")
-    
+
     if not database_url:
         raise DatabaseConfigError(
-            "DATABASE_URL environment variable is required. "
-            "Please set it in your .env file or environment."
+            "DATABASE_URL environment variable is required. " "Please set it in your .env file or environment."
         )
-    
+
     return _validate_database_url(database_url)
 
 
@@ -113,26 +102,42 @@ except DatabaseConfigError as e:
     logger.error(f"Database configuration error: {str(e)}")
     raise
 
+
+def _pool_class_for_url(database_url: str):
+    """Return the connection pool class for a database URL.
+
+    SQLite doesn't benefit from connection pooling, so it uses NullPool;
+    server databases use a QueuePool.
+    """
+    return NullPool if urlparse(database_url).scheme == "sqlite" else QueuePool
+
+
 # Optimize connection pool for better performance
 try:
     # Determine connection pool settings based on database type
     parsed_url = urlparse(DATABASE_URL)
-    is_sqlite = parsed_url.scheme == 'sqlite'
-    
+    is_sqlite = parsed_url.scheme == "sqlite"
+
     # SQLite doesn't benefit from connection pooling
-    pool_class = NullPool if is_sqlite else QueuePool
-    
-    engine = create_engine(
-        DATABASE_URL,
-        poolclass=pool_class,
-        pool_size=10 if not is_sqlite else None,  # Connection pool size
-        max_overflow=20 if not is_sqlite else None,  # Max overflow connections
-        pool_pre_ping=True if not is_sqlite else False,  # Test connections before using
-        pool_recycle=3600 if not is_sqlite else None,  # Recycle connections after 1 hour
-        echo=False,  # Disable SQL logging for performance
-        connect_args={"connect_timeout": 10} if not is_sqlite else {},  # Connection timeout
-    )
-    
+    pool_class = _pool_class_for_url(DATABASE_URL)
+
+    engine_kwargs = {
+        "poolclass": pool_class,
+        "echo": False,  # Disable SQL logging for performance
+    }
+    if not is_sqlite:
+        engine_kwargs.update(
+            {
+                "pool_size": 10,  # Connection pool size
+                "max_overflow": 20,  # Max overflow connections
+                "pool_pre_ping": True,  # Test connections before using
+                "pool_recycle": 3600,  # Recycle connections after 1 hour
+                "connect_args": {"connect_timeout": 10},  # Connection timeout
+            }
+        )
+
+    engine = create_engine(DATABASE_URL, **engine_kwargs)
+
     logger.info(f"Database engine created successfully (pool_class: {pool_class.__name__})")
 
 except Exception as e:
@@ -164,6 +169,7 @@ def receive_engine_disposed(engine):
     """Handle engine disposal"""
     logger.warning("Database engine disposed - pool connections recycled")
 
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -171,70 +177,68 @@ Base = declarative_base()
 
 def _verify_database_connection() -> bool:
     """Verify that database connection is working.
-    
+
     Returns:
         True if connection is successful
-        
+
     Raises:
         DatabaseConfigError: If connection fails
     """
     try:
         with engine.connect() as connection:
             # Execute a simple query to verify connection
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
             logger.info("Database connection verified successfully")
             return True
-    
+
     except exc.OperationalError as e:
         logger.error(f"Database operational error: {str(e)}")
         raise DatabaseConfigError(
             f"Unable to connect to database. Please check your DATABASE_URL configuration: {str(e)}"
         )
-    
+
     except exc.ArgumentError as e:
         logger.error(f"Database argument error: {str(e)}")
-        raise DatabaseConfigError(
-            f"Invalid database configuration: {str(e)}"
-        )
-    
+        raise DatabaseConfigError(f"Invalid database configuration: {str(e)}")
+
     except Exception as e:
         logger.error(f"Unexpected database error: {str(e)}")
-        raise DatabaseConfigError(
-            f"Database connection failed: {str(e)}"
-        )
+        raise DatabaseConfigError(f"Database connection failed: {str(e)}")
 
 
 def get_db():
     """Get database session with error handling.
-    
+
     Yields:
         SQLAlchemy database session
-        
+
     Raises:
         DatabaseConfigError: If database operations fail
     """
     db = SessionLocal()
     try:
         yield db
-    
+
     except exc.SQLAlchemyError as e:
         logger.error(f"Database error during session: {str(e)}")
         db.rollback()
         raise
-    
+
     except Exception as e:
         logger.error(f"Unexpected error during database session: {str(e)}")
         db.rollback()
         raise
-    
+
     finally:
         db.close()
         logger.debug("Database session closed")
 
 
-# Verify database connection on startup
+# Verify database connection on startup. This is best-effort: a temporarily
+# unavailable database should not prevent the application from importing and
+# starting. The lifespan event in main.py performs the authoritative check and
+# table creation, and individual requests will surface connection errors as 500s.
 try:
     _verify_database_connection()
 except DatabaseConfigError as e:
-    logger.critical(f"Critical database configuration error: {str(e)}")
-    raise
+    logger.warning(f"Database not reachable at import time: {str(e)}")

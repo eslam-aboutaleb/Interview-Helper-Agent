@@ -1,60 +1,79 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, PieChart, TrendingUp, Users, MessageSquare, Flag, Target, Award, RefreshCw } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  Users,
+  MessageSquare,
+  Flag,
+  Target,
+  Award,
+} from 'lucide-react';
 import { statsApi, parseAxiosError } from '../services/api';
 import { Stats } from '../types';
-import { ErrorResponse, ErrorType } from '../services/errorHandler';
+import { ErrorResponse } from '../services/errorHandler';
 import StatCard from '../components/StatCard';
-import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
 import EmptyState from '../components/EmptyState';
-import toast from 'react-hot-toast';
+import { Skeleton, SkeletonStatCard } from '../components/ui/Skeleton';
 
 const StatsPage: React.FC = () => {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ErrorResponse | null>(null);
+  const {
+    data: stats,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<Stats>({
+    queryKey: ['stats'],
+    queryFn: () => statsApi.get().then((r) => r.data),
+  });
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await statsApi.get();
-      setStats(response.data);
-    } catch (err) {
-      const parsedError = parseAxiosError(err);
-      setError(parsedError);
-      console.error('Failed to fetch stats:', parsedError);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-96">
-        <LoadingSpinner size="lg" />
+      <div className="space-y-8">
+        <div className="text-center">
+          <Skeleton width={280} height={40} className="mx-auto" />
+          <Skeleton width={420} height={24} className="mx-auto mt-4" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          {[0, 1, 2, 3].map((i) => (
+            <SkeletonStatCard key={i} />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="bg-white rounded-2xl border border-slate-200 p-8 shadow-soft space-y-6"
+            >
+              <Skeleton width="40%" height={28} />
+              {[0, 1, 2].map((j) => (
+                <div key={j} className="space-y-2">
+                  <Skeleton width="60%" height={16} />
+                  <Skeleton width="100%" height={12} />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  if (isError) {
+    const parsedError: ErrorResponse = parseAxiosError(error);
     return (
-      <div className="space-y-6">
-        <Alert
-          type="error"
-          title="Failed to Load Statistics"
-          message={error.message}
-          details={error.details}
-          actionLabel="Retry"
-          onAction={fetchStats}
-          onDismiss={() => setError(null)}
-        />
-      </div>
+      <Alert
+        type="error"
+        title="Failed to Load Statistics"
+        message={parsedError.message}
+        details={parsedError.details}
+        actionLabel="Retry"
+        onAction={() => refetch()}
+      />
     );
   }
 
@@ -65,7 +84,7 @@ const StatsPage: React.FC = () => {
         message="Start generating and rating questions to see your statistics."
         icon={<BarChart3 className="w-12 h-12 text-gray-400" />}
         actionLabel="Generate Questions"
-        onAction={() => window.location.href = '/generate'}
+        onAction={() => (window.location.href = '/generate')}
       />
     );
   }
@@ -73,14 +92,14 @@ const StatsPage: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <motion.div 
+      <motion.div
         className="text-center"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <div className="inline-flex items-center space-x-3 mb-6">
-          <motion.div 
+          <motion.div
             className="p-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-strong"
             whileHover={{ scale: 1.05, rotate: 5 }}
           >
@@ -89,12 +108,13 @@ const StatsPage: React.FC = () => {
           <h1 className="text-4xl font-bold text-gray-900">Statistics Dashboard</h1>
         </div>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-          Track your interview preparation progress and analyze question patterns to optimize your study plan
+          Track your interview preparation progress and analyze question patterns to optimize your
+          study plan
         </p>
       </motion.div>
 
       {/* Overview Cards */}
-      <motion.div 
+      <motion.div
         className="grid grid-cols-2 md:grid-cols-4 gap-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -136,7 +156,7 @@ const StatsPage: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Questions by Type */}
-        <motion.div 
+        <motion.div
           className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft"
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -153,8 +173,8 @@ const StatsPage: React.FC = () => {
             {Object.entries(stats.questions_by_type).map(([type, count], index) => {
               const percentage = ((count / stats.total_questions) * 100).toFixed(1);
               return (
-                <motion.div 
-                  key={type} 
+                <motion.div
+                  key={type}
                   className="space-y-3"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -162,9 +182,11 @@ const StatsPage: React.FC = () => {
                 >
                   <div className="flex justify-between items-center">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full ${
-                        type === 'technical' ? 'bg-blue-500' : 'bg-gray-500'
-                      }`} />
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          type === 'technical' ? 'bg-blue-500' : 'bg-gray-500'
+                        }`}
+                      />
                       <span className="capitalize font-semibold text-gray-700">{type}</span>
                     </div>
                     <div className="text-right">
@@ -175,8 +197,8 @@ const StatsPage: React.FC = () => {
                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                     <motion.div
                       className={`h-3 rounded-full ${
-                        type === 'technical' 
-                          ? 'bg-gradient-to-r from-blue-500 to-blue-600' 
+                        type === 'technical'
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600'
                           : 'bg-gradient-to-r from-gray-500 to-gray-600'
                       }`}
                       initial={{ width: 0 }}
@@ -191,7 +213,7 @@ const StatsPage: React.FC = () => {
         </motion.div>
 
         {/* Questions by Job Title */}
-        <motion.div 
+        <motion.div
           className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft"
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -206,20 +228,22 @@ const StatsPage: React.FC = () => {
 
           <div className="space-y-6">
             {Object.entries(stats.questions_by_job_title)
-              .sort(([,a], [,b]) => b - a)
+              .sort(([, a], [, b]) => b - a)
               .slice(0, 8)
               .map(([jobTitle, count], index) => {
                 const percentage = ((count / stats.total_questions) * 100).toFixed(1);
                 return (
-                  <motion.div 
-                    key={jobTitle} 
+                  <motion.div
+                    key={jobTitle}
                     className="space-y-3"
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.4, delay: 0.5 + index * 0.1 }}
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-semibold text-gray-700 truncate flex-1 mr-4">{jobTitle}</span>
+                      <span className="font-semibold text-gray-700 truncate flex-1 mr-4">
+                        {jobTitle}
+                      </span>
                       <div className="text-right">
                         <span className="text-lg font-bold text-gray-900">{count}</span>
                         <span className="text-sm text-gray-500 ml-2">({percentage}%)</span>
@@ -241,7 +265,7 @@ const StatsPage: React.FC = () => {
       </div>
 
       {/* Additional Insights */}
-      <motion.div 
+      <motion.div
         className="grid grid-cols-1 md:grid-cols-3 gap-6"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -254,7 +278,9 @@ const StatsPage: React.FC = () => {
             </div>
             <h3 className="text-xl font-semibold">Question Coverage</h3>
           </div>
-          <p className="text-4xl font-bold mb-2">{Object.keys(stats.questions_by_job_title).length}</p>
+          <p className="text-4xl font-bold mb-2">
+            {Object.keys(stats.questions_by_job_title).length}
+          </p>
           <p className="text-blue-100">Different job roles covered</p>
         </div>
 

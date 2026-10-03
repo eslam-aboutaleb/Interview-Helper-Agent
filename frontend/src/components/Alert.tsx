@@ -6,6 +6,7 @@ interface AlertProps {
   type: 'error' | 'warning' | 'info' | 'success';
   title?: string;
   message: string;
+  details?: Record<string, unknown>;
   onDismiss?: () => void;
   actionLabel?: string;
   onAction?: () => void;
@@ -16,10 +17,11 @@ const Alert: React.FC<AlertProps> = ({
   type,
   title,
   message,
+  details,
   onDismiss,
   actionLabel,
   onAction,
-  dismissible = true
+  dismissible = true,
 }) => {
   const styles = {
     error: {
@@ -27,29 +29,29 @@ const Alert: React.FC<AlertProps> = ({
       borderColor: 'border-red-200',
       iconColor: 'text-red-600',
       icon: AlertCircle,
-      buttonColor: 'hover:bg-red-100'
+      buttonColor: 'hover:bg-red-100',
     },
     warning: {
       bgColor: 'bg-yellow-50',
       borderColor: 'border-yellow-200',
       iconColor: 'text-yellow-600',
       icon: AlertTriangle,
-      buttonColor: 'hover:bg-yellow-100'
+      buttonColor: 'hover:bg-yellow-100',
     },
     info: {
       bgColor: 'bg-blue-50',
       borderColor: 'border-blue-200',
       iconColor: 'text-blue-600',
       icon: Info,
-      buttonColor: 'hover:bg-blue-100'
+      buttonColor: 'hover:bg-blue-100',
     },
     success: {
       bgColor: 'bg-green-50',
       borderColor: 'border-green-200',
       iconColor: 'text-green-600',
       icon: CheckCircle,
-      buttonColor: 'hover:bg-green-100'
-    }
+      buttonColor: 'hover:bg-green-100',
+    },
   };
 
   const style = styles[type];
@@ -67,11 +69,19 @@ const Alert: React.FC<AlertProps> = ({
 
       <div className="flex-1 min-w-0">
         {title && (
-          <h3 className={`font-semibold text-gray-900 mb-1 ${type === 'error' ? 'text-red-900' : ''}`}>
+          <h3
+            className={`font-semibold text-gray-900 mb-1 ${type === 'error' ? 'text-red-900' : ''}`}
+          >
             {title}
           </h3>
         )}
         <p className="text-sm text-gray-700">{message}</p>
+
+        {details && Object.keys(details).length > 0 && (
+          <pre className="mt-3 text-xs text-gray-600 bg-white/60 rounded p-2 overflow-x-auto">
+            {JSON.stringify(details, null, 2)}
+          </pre>
+        )}
 
         {actionLabel && onAction && (
           <button

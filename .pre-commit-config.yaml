@@ -1,0 +1,47 @@
+# Pre-commit hooks: lint/format Python with ruff and
+# format config/markup files with prettier.
+#
+# Install: pip install pre-commit && pre-commit install
+# Run on all files: pre-commit run --all-files
+
+repos:
+  # Python linting + formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # General file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+
+  # Config / markup formatting (JSON, YAML, Markdown, CSS, HTML)
+  # TypeScript/TSX are formatted by the frontend toolchain instead.
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or:
+          - json
+          - yaml
+          - markdown
+          - css
+          - html
+        exclude: |
+          (?x)^(
+            .*/package-lock\.json|
+            .*/build/|
+            .*\.min\.css|
+            .*\.tf$|
+            .*\.tftpl$
+          )

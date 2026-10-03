@@ -1,0 +1,45 @@
+#!/bin/bash
+set -ex
+
+# Install Docker and git
+yum update -y
+yum install -y docker git
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+# Install the docker-compose plugin
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Clone the application
+git clone -b ${repo_branch} ${repo_url} /opt/interview-helper
+cd /opt/interview-helper
+
+# Write environment file (loaded automatically by docker compose).
+# The quoted heredoc prevents the shell from expanding values that
+# may contain special characters (e.g. the DB password).
+cat > .env <<'ENVEOF'
+DB_NAME=${db_name}
+DB_USER=${db_user}
+DB_PASSWORD=${db_password}
+POSTGRES_PASSWORD=${db_password}
+POSTGRES_DB=${db_name}
+DATABASE_URL=${database_url}
+GEMINI_API_KEY=${gemini_api_key}
+CORS_ORIGINS=${cors_origins}
+LOG_LEVEL=${log_level}
+ENVIRONMENT=${environment}
+LLM_MODEL=${llm_model}
+LLM_FALLBACK_MODELS=${llm_fallback_models}
+ENVEOF
+
+# Launch the stack.
+# - RDS mode: only backend + frontend start (db service is profile-gated)
+# - Container mode: the full stack including the containerized database
+if ${use_rds}; then
+  docker compose -f docker-compose.prod.yml up -d
+else
+  docker compose -f docker-compose.prod.yml --profile container-db up -d
+fi

@@ -32,7 +32,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
   };
 
   const getTypeColor = (type: string): string => {
-    return type === 'technical' 
+    return type === 'technical'
       ? 'bg-blue-100 text-blue-800 border-blue-200'
       : 'bg-gray-100 text-gray-800 border-gray-200';
   };
@@ -47,10 +47,14 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center space-x-3 mb-4">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getTypeColor(question.question_type)}`}>
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-medium border ${getTypeColor(question.question_type)}`}
+            >
               {question.question_type}
             </span>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getDifficultyColor(question.difficulty)}`}>
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-medium border ${getDifficultyColor(question.difficulty)}`}
+            >
               Level {question.difficulty}
             </span>
             <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm border border-gray-200">
@@ -66,11 +70,11 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
               </motion.div>
             )}
           </div>
-          
+
           <p className="text-gray-900 font-medium text-lg mb-4 leading-relaxed">
             {question.question_text}
           </p>
-          
+
           {question.tags && (
             <div className="flex flex-wrap gap-2 mb-4">
               <Tag className="w-4 h-4 text-gray-400" />
@@ -84,7 +88,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
               ))}
             </div>
           )}
-          
+
           <div className="flex items-center text-xs text-gray-500">
             <Calendar className="w-3 h-3 mr-1" />
             Created: {new Date(question.created_at).toLocaleDateString()}
@@ -100,8 +104,10 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
             aria-label={`Set difficulty for question ${question.id}`}
             className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {[1, 2, 3, 4, 5].map(level => (
-              <option key={level} value={level}>Level {level}</option>
+            {[1, 2, 3, 4, 5].map((level) => (
+              <option key={level} value={level}>
+                Level {level}
+              </option>
             ))}
           </select>
 

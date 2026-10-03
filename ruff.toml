@@ -1,0 +1,18 @@
+# Ruff configuration for the backend.
+# Python 3.9 is the minimum supported version.
+
+# 120 keeps the check compatible with the long LLM prompt
+# strings used by the question-generation and evaluation
+# services.
+line-length = 120
+target-version = "py39"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402"]   # allow imports after sys.path manipulation

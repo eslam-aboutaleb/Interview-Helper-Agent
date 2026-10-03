@@ -14,9 +14,9 @@ services:
 
   frontend:
     volumes:
-      # Mount source code for live React hot reload
+      # Mount source code for live Vite hot reload
       - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
       - ./frontend/package.json:/app/package.json
       - ./frontend/tsconfig.json:/app/tsconfig.json
       - ./frontend/tailwind.config.js:/app/tailwind.config.js

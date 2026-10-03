@@ -1,29 +1,31 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Brain, Wand2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Sparkles, Brain, Wand2, CheckCircle } from 'lucide-react';
 import { questionsApi, parseAxiosError } from '../services/api';
-import { Question, QuestionGenerateRequest } from '../types';
-import { ErrorResponse, ErrorType } from '../services/errorHandler';
+import { Question, QuestionGenerateRequest, QuestionUpdateRequest } from '../types';
+import { ErrorResponse } from '../services/errorHandler';
 import QuestionCard from '../components/QuestionCard';
-import LoadingSpinner from '../components/LoadingSpinner';
 import Alert from '../components/Alert';
 import EmptyState from '../components/EmptyState';
+import { Skeleton } from '../components/ui/Skeleton';
 import toast from 'react-hot-toast';
 
 const Generate: React.FC = () => {
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<QuestionGenerateRequest>({
     job_title: '',
     count: 5,
-    question_type: 'mixed'
+    question_type: 'mixed',
   });
-  const [loading, setLoading] = useState(false);
   const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
   const [error, setError] = useState<ErrorResponse | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [pendingId, setPendingId] = useState<number | null>(null);
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    
+
     if (!formData.job_title.trim()) {
       errors.job_title = 'Job title is required';
     } else if (formData.job_title.length < 2) {
@@ -31,130 +33,130 @@ const Generate: React.FC = () => {
     } else if (formData.job_title.length > 100) {
       errors.job_title = 'Job title cannot exceed 100 characters';
     }
-    
+
     if (formData.count < 1 || formData.count > 100) {
       errors.count = 'Number of questions must be between 1 and 100';
     }
-    
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const generateMutation = useMutation({
+    mutationFn: (data: QuestionGenerateRequest) => questionsApi.generate(data).then((r) => r.data),
+    onSuccess: (data) => {
+      setGeneratedQuestions(data);
+      setError(null);
+      if (data.length === 0) {
+        toast('No questions were generated. Please try again.');
+      } else {
+        toast.success(`Generated ${data.length} questions successfully!`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    },
+    onError: (err: unknown) => {
+      setError(parseAxiosError(err));
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: QuestionUpdateRequest }) =>
+      questionsApi.update(id, data).then((r) => r.data),
+    onMutate: ({ id }) => setPendingId(id),
+    onSettled: () => setPendingId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    },
+    onError: (err: unknown) => {
+      const parsed = parseAxiosError(err);
+      toast.error(`Failed to update question: ${parsed.message}`);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => questionsApi.delete(id).then(() => id),
+    onMutate: (id) => setPendingId(id),
+    onSettled: () => setPendingId(null),
+    onSuccess: (id) => {
+      setGeneratedQuestions((prev) => prev.filter((q) => q.id !== id));
+      toast.success('Question deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    },
+    onError: (err: unknown) => {
+      const parsed = parseAxiosError(err);
+      toast.error(`Failed to delete question: ${parsed.message}`);
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       toast.error('Please fix the validation errors');
       return;
     }
-    
-    setLoading(true);
+
     setError(null);
     setGeneratedQuestions([]);
-    
-    try {
-      const response = await questionsApi.generate(formData);
-      setGeneratedQuestions(response.data);
-      if (response.data.length === 0) {
-        toast.warning('No questions were generated. Please try again.');
-      } else {
-        toast.success(`Generated ${response.data.length} questions successfully!`);
-      }
-    } catch (err) {
-      const parsedError = parseAxiosError(err);
-      setError(parsedError);
-      console.error('Generation failed:', parsedError);
-    } finally {
-      setLoading(false);
-    }
+    generateMutation.mutate(formData);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: name === 'count' ? parseInt(value) : value
+      [name]: name === 'count' ? parseInt(value) : value,
     }));
-    // Clear validation error for this field
-    setValidationErrors(prev => ({
+    setValidationErrors((prev) => ({
       ...prev,
-      [name]: ''
+      [name]: '',
     }));
   };
 
   const handleQuestionTypeChange = (type: 'mixed' | 'technical' | 'behavioral') => {
-    setFormData(prev => ({ ...prev, question_type: type }));
+    setFormData((prev) => ({ ...prev, question_type: type }));
   };
 
-  const toggleFlag = async (questionId: number) => {
-    try {
-      const question = generatedQuestions.find(q => q.id === questionId);
-      if (!question) {
-        toast.error('Question not found');
-        return;
-      }
-
-      await questionsApi.update(questionId, {
-        is_flagged: !question.is_flagged
-      });
-      
-      setGeneratedQuestions(prev => 
-        prev.map(q => 
-          q.id === questionId 
-            ? { ...q, is_flagged: !q.is_flagged }
-            : q
-        )
-      );
-      
-      toast.success(question.is_flagged ? 'Question unflagged' : 'Question flagged');
-    } catch (err) {
-      const parsedError = parseAxiosError(err);
-      toast.error(`Failed to update question: ${parsedError.message}`);
-      console.error('Failed to toggle flag:', parsedError);
-    }
-  };
-
-  const updateDifficulty = async (questionId: number, newDifficulty: number) => {
-    try {
-      await questionsApi.update(questionId, {
-        difficulty: newDifficulty
-      });
-      
-      setGeneratedQuestions(prev => 
-        prev.map(q => 
-          q.id === questionId 
-            ? { ...q, difficulty: newDifficulty }
-            : q
-        )
-      );
-      
-      toast.success('Difficulty updated successfully');
-    } catch (err) {
-      const parsedError = parseAxiosError(err);
-      toast.error(`Failed to update difficulty: ${parsedError.message}`);
-      console.error('Failed to update difficulty:', parsedError);
-    }
-  };
-
-  const deleteQuestion = async (questionId: number) => {
-    if (!window.confirm('Are you sure you want to delete this question? This action cannot be undone.')) {
+  const toggleFlag = (questionId: number) => {
+    const question = generatedQuestions.find((q) => q.id === questionId);
+    if (!question) {
+      toast.error('Question not found');
       return;
     }
-    
-    try {
-      await questionsApi.delete(questionId);
-      setGeneratedQuestions(prev => prev.filter(q => q.id !== questionId));
-      toast.success('Question deleted successfully');
-    } catch (err) {
-      const parsedError = parseAxiosError(err);
-      toast.error(`Failed to delete question: ${parsedError.message}`);
-      console.error('Failed to delete question:', parsedError);
-    }
+    updateMutation.mutate({
+      id: questionId,
+      data: { is_flagged: !question.is_flagged },
+    });
+    setGeneratedQuestions((prev) =>
+      prev.map((q) => (q.id === questionId ? { ...q, is_flagged: !q.is_flagged } : q))
+    );
   };
+
+  const updateDifficulty = (questionId: number, newDifficulty: number) => {
+    updateMutation.mutate({ id: questionId, data: { difficulty: newDifficulty } });
+    setGeneratedQuestions((prev) =>
+      prev.map((q) => (q.id === questionId ? { ...q, difficulty: newDifficulty } : q))
+    );
+  };
+
+  const deleteQuestion = (questionId: number) => {
+    if (
+      !window.confirm(
+        'Are you sure you want to delete this question? This action cannot be undone.'
+      )
+    ) {
+      return;
+    }
+    deleteMutation.mutate(questionId);
+  };
+
+  const isGenerating = generateMutation.isPending;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      {/* Error Alert */}
       {error && (
         <Alert
           type="error"
@@ -166,19 +168,18 @@ const Generate: React.FC = () => {
             setError(null);
             setGeneratedQuestions([]);
           }}
-          onDismiss={() => setError(null)}
         />
       )}
 
       {/* Header */}
-      <motion.div 
+      <motion.div
         className="text-center"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <div className="inline-flex items-center space-x-3 mb-6">
-          <motion.div 
+          <motion.div
             className="p-4 bg-gradient-to-br from-gray-700 to-gray-800 rounded-2xl shadow-strong"
             whileHover={{ scale: 1.05, rotate: 5 }}
           >
@@ -187,12 +188,13 @@ const Generate: React.FC = () => {
           <h1 className="text-4xl font-bold text-gray-900">Generate Questions</h1>
         </div>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-          Use advanced AI to create personalized interview questions tailored to your target role and experience level
+          Use advanced AI to create personalized interview questions tailored to your target role
+          and experience level
         </p>
       </motion.div>
 
       {/* Generation Form */}
-      <motion.div 
+      <motion.div
         className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -201,9 +203,7 @@ const Generate: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Job Title *
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Job Title *</label>
               <input
                 type="text"
                 name="job_title"
@@ -212,8 +212,8 @@ const Generate: React.FC = () => {
                 placeholder="e.g., Software Engineer, Data Scientist, Product Manager"
                 aria-label="Job title for generating questions"
                 className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white ${
-                  validationErrors.job_title 
-                    ? 'border-error-300 focus:ring-error-500' 
+                  validationErrors.job_title
+                    ? 'border-error-300 focus:ring-error-500'
                     : 'border-gray-300 focus:ring-blue-500'
                 }`}
               />
@@ -232,8 +232,8 @@ const Generate: React.FC = () => {
                 onChange={handleInputChange}
                 aria-label="Number of questions to generate"
                 className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white ${
-                  validationErrors.count 
-                    ? 'border-error-300 focus:ring-error-500' 
+                  validationErrors.count
+                    ? 'border-error-300 focus:ring-error-500'
                     : 'border-gray-300 focus:ring-blue-500'
                 }`}
               >
@@ -249,29 +249,27 @@ const Generate: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-4">
-              Question Type
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-4">Question Type</label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                { 
-                  value: 'mixed', 
-                  label: 'Mixed Questions', 
+                {
+                  value: 'mixed',
+                  label: 'Mixed Questions',
                   description: 'Technical & Behavioral',
-                  icon: '🎯'
+                  icon: '🎯',
                 },
-                { 
-                  value: 'technical', 
-                  label: 'Technical Only', 
+                {
+                  value: 'technical',
+                  label: 'Technical Only',
                   description: 'Skills & Knowledge',
-                  icon: '💻'
+                  icon: '💻',
                 },
-                { 
-                  value: 'behavioral', 
-                  label: 'Behavioral Only', 
+                {
+                  value: 'behavioral',
+                  label: 'Behavioral Only',
                   description: 'Soft Skills & Experience',
-                  icon: '🤝'
-                }
+                  icon: '🤝',
+                },
               ].map((option) => (
                 <motion.label
                   key={option.value}
@@ -288,7 +286,9 @@ const Generate: React.FC = () => {
                     name="question_type"
                     value={option.value}
                     checked={formData.question_type === option.value}
-                    onChange={() => handleQuestionTypeChange(option.value as any)}
+                    onChange={() =>
+                      handleQuestionTypeChange(option.value as 'mixed' | 'technical' | 'behavioral')
+                    }
                     className="sr-only"
                   />
                   <div className="text-center">
@@ -310,27 +310,31 @@ const Generate: React.FC = () => {
             </div>
           </div>
 
-          {error && (
-            <motion.div 
-              className="p-4 bg-error-50 border border-error-200 rounded-xl flex items-center space-x-3"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-            >
-              <AlertCircle className="w-5 h-5 text-error-600" />
-              <p className="text-error-700 font-medium">{error}</p>
-            </motion.div>
-          )}
-
           <motion.button
             type="submit"
-            disabled={loading || !formData.job_title}
+            disabled={isGenerating || !formData.job_title}
             className="w-full flex items-center justify-center space-x-3 px-8 py-4 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-xl font-semibold shadow-strong hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
-            whileHover={{ scale: loading ? 1 : 1.02 }}
-            whileTap={{ scale: loading ? 1 : 0.98 }}
+            whileHover={{ scale: isGenerating ? 1 : 1.02 }}
+            whileTap={{ scale: isGenerating ? 1 : 0.98 }}
           >
-            {loading ? (
+            {isGenerating ? (
               <>
-                <LoadingSpinner size="sm" className="border-white border-t-transparent" />
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
                 <span>Generating Questions...</span>
               </>
             ) : (
@@ -345,8 +349,20 @@ const Generate: React.FC = () => {
       </motion.div>
 
       {/* Generated Questions */}
-      {generatedQuestions.length > 0 && (
-        <motion.div 
+      {isGenerating && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft space-y-6">
+          <div className="flex items-center space-x-3">
+            <Skeleton width={24} height={24} variant="circular" />
+            <Skeleton width={200} height={28} />
+          </div>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} width="100%" height={140} variant="rectangular" />
+          ))}
+        </div>
+      )}
+
+      {generatedQuestions.length > 0 && !isGenerating && (
+        <motion.div
           className="bg-white rounded-2xl border border-gray-200 p-8 shadow-soft"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -368,11 +384,20 @@ const Generate: React.FC = () => {
                 onToggleFlag={toggleFlag}
                 onUpdateDifficulty={updateDifficulty}
                 onDelete={deleteQuestion}
+                isLoading={pendingId === question.id}
                 index={index}
               />
             ))}
           </div>
         </motion.div>
+      )}
+
+      {!isGenerating && generatedQuestions.length === 0 && !error && (
+        <EmptyState
+          title="No questions generated yet"
+          message="Fill in the form above and generate your first set of AI-powered interview questions."
+          icon={<Sparkles className="w-12 h-12 text-gray-400" />}
+        />
       )}
     </div>
   );

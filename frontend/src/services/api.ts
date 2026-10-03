@@ -1,7 +1,20 @@
-import axios, { AxiosError, AxiosResponse } from 'axios';
-import toast from 'react-hot-toast';
-import { Question, QuestionSet, Stats, QuestionGenerateRequest, QuestionCreateRequest, QuestionUpdateRequest } from '../types';
-import { parseAxiosError, ErrorResponse } from './errorHandler';
+import axios, { AxiosError } from 'axios';
+import {
+  Question,
+  QuestionSet,
+  Stats,
+  QuestionGenerateRequest,
+  QuestionCreateRequest,
+  QuestionUpdateRequest,
+  InterviewSessionCreate,
+  InterviewSession,
+  InterviewMessage,
+  InterviewAnswerRequest,
+  InterviewTurnResponse,
+  ModelAnswerRequest,
+  ModelAnswerResponse,
+} from '../types';
+import { parseAxiosError } from './errorHandler';
 
 // The baseURL is removed. All requests are now relative to the current domain.
 // - On EC2, NGINX will proxy requests starting with /api to the backend.
@@ -13,34 +26,19 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 });
 
-// Request interceptor - add request tracking
-api.interceptors.request.use(
-  (config) => {
-    // Add timestamp for debugging
-    (config as any).timestamp = Date.now();
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
 // Response interceptor - enhanced error handling
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error: AxiosError) => {
-    // Parse and log error
-    const parsedError = parseAxiosError(error);
-    
     // Log detailed error info in development
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.error('API Error:', {
         status: error.response?.status,
         data: error.response?.data,
         message: error.message,
-        config: error.config?.url
+        config: error.config?.url,
       });
     }
 
@@ -48,21 +46,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-/**
- * Wrapper function for API calls with consistent error handling
- */
-const handleApiCall = async <T>(
-  apiCall: () => Promise<AxiosResponse<T>>
-): Promise<{ data: T | null; error: ErrorResponse | null }> => {
-  try {
-    const response = await apiCall();
-    return { data: response.data, error: null };
-  } catch (err) {
-    const error = parseAxiosError(err);
-    return { data: null, error };
-  }
-};
 
 export const questionsApi = {
   generate: (data: QuestionGenerateRequest) =>
@@ -76,27 +59,21 @@ export const questionsApi = {
     flagged_only?: boolean;
   }) => api.get<Question[]>('/api/questions/', { params }),
 
-  getById: (id: number) =>
-    api.get<Question>(`/api/questions/${id}`),
+  getById: (id: number) => api.get<Question>(`/api/questions/${id}`),
 
-  create: (data: QuestionCreateRequest) =>
-    api.post<Question>('/api/questions/', data),
+  create: (data: QuestionCreateRequest) => api.post<Question>('/api/questions/', data),
 
   update: (id: number, data: QuestionUpdateRequest) =>
     api.put<Question>(`/api/questions/${id}`, data),
 
-  delete: (id: number) =>
-    api.delete(`/api/questions/${id}`),
+  delete: (id: number) => api.delete(`/api/questions/${id}`),
 
-  getJobTitles: () =>
-    api.get<string[]>('/api/questions/job-titles/'),
+  getJobTitles: () => api.get<string[]>('/api/questions/job-titles/'),
 };
 
 export const questionSetsApi = {
-  getAll: (params?: {
-    skip?: number;
-    limit?: number;
-  }) => api.get<QuestionSet[]>('/api/questions/sets/', { params }),
+  getAll: (params?: { skip?: number; limit?: number }) =>
+    api.get<QuestionSet[]>('/api/questions/sets/', { params }),
 
   create: (data: {
     name: string;
@@ -108,6 +85,27 @@ export const questionSetsApi = {
 
 export const statsApi = {
   get: () => api.get<Stats>('/api/stats/'),
+};
+
+export const interviewsApi = {
+  start: (data: InterviewSessionCreate) =>
+    api.post<InterviewSession>('/api/interviews/sessions', data),
+
+  list: (limit?: number) =>
+    api.get<InterviewSession[]>('/api/interviews/sessions', {
+      params: limit ? { limit } : undefined,
+    }),
+
+  get: (sessionId: number) => api.get<InterviewSession>(`/api/interviews/sessions/${sessionId}`),
+
+  getMessages: (sessionId: number) =>
+    api.get<InterviewMessage[]>(`/api/interviews/sessions/${sessionId}/messages`),
+
+  submitAnswer: (sessionId: number, data: InterviewAnswerRequest) =>
+    api.post<InterviewTurnResponse>(`/api/interviews/sessions/${sessionId}/answer`, data),
+
+  modelAnswer: (data: ModelAnswerRequest) =>
+    api.post<ModelAnswerResponse>('/api/interviews/model-answer', data),
 };
 
 // Helper function for QuestionSets page

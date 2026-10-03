@@ -1,81 +1,75 @@
-import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { FolderOpen, Plus } from "lucide-react";
-import { fetchQuestionSets, parseAxiosError } from "../services/api";
-import { ErrorResponse, ErrorType } from '../services/errorHandler';
-import QuestionSetCard from "../components/QuestionSetCard";
-import LoadingSpinner from "../components/LoadingSpinner";
-import Alert from "../components/Alert";
-import EmptyState from "../components/EmptyState";
-import { QuestionSet } from "../types";
+import React from 'react';
+import { motion } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
+import { FolderOpen, Plus } from 'lucide-react';
+import { questionSetsApi, parseAxiosError } from '../services/api';
+import { ErrorResponse } from '../services/errorHandler';
+import QuestionSetCard from '../components/QuestionSetCard';
+import Alert from '../components/Alert';
+import EmptyState from '../components/EmptyState';
+import { Skeleton } from '../components/ui/Skeleton';
+import { QuestionSet } from '../types';
 
 const QuestionSets: React.FC = () => {
-  const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<ErrorResponse | null>(null);
-
-  useEffect(() => {
-    loadQuestionSets();
-  }, []);
-
-  const loadQuestionSets = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchQuestionSets();
-      setQuestionSets(data);
-    } catch (err) {
-      const parsedError = parseAxiosError(err);
-      setError(parsedError);
-      console.error("Error fetching question sets:", parsedError);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: questionSets = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<QuestionSet[]>({
+    queryKey: ['question-sets'],
+    queryFn: () => questionSetsApi.getAll().then((r) => r.data),
+  });
 
   // Calculate question count from the question_ids field
   const getQuestionCount = (questionIds: string): number => {
     try {
-      // The question_ids could be a JSON string array or a comma-separated string
-      if (questionIds.startsWith("[")) {
-        // If it's a JSON string
+      if (questionIds.startsWith('[')) {
         return JSON.parse(questionIds).length;
-      } else {
-        // If it's a comma-separated string
-        return questionIds.split(",").filter((id) => id.trim() !== "").length;
       }
+      return questionIds.split(',').filter((id) => id.trim() !== '').length;
     } catch (e) {
-      console.error("Error parsing question_ids:", e);
+      console.error('Error parsing question_ids:', e);
       return 0;
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <LoadingSpinner />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton width={200} height={36} />
+            <Skeleton width={320} height={20} className="mt-2" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} width="100%" height={180} variant="rectangular" />
+          ))}
+        </div>
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <Alert
-        type="error"
-        title="Failed to Load Question Sets"
-        message={error.message}
-        details={error.details}
-        actionLabel="Retry"
-        onAction={loadQuestionSets}
-        onDismiss={() => setError(null)}
-      />
-    );
-  }
+  const queryError: ErrorResponse | null = isError ? parseAxiosError(error) : null;
 
   return (
     <div className="space-y-6">
+      {queryError && (
+        <Alert
+          type="error"
+          title="Failed to Load Question Sets"
+          message={queryError.message}
+          details={queryError.details}
+          actionLabel="Retry"
+          onAction={() => refetch()}
+        />
+      )}
+
       {/* Header */}
-      <motion.div 
+      <motion.div
         className="flex items-center justify-between"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -85,9 +79,9 @@ const QuestionSets: React.FC = () => {
           <h1 className="text-4xl font-bold text-gray-900">Question Sets</h1>
           <p className="text-gray-600 mt-2">Create and organize themed question collections</p>
         </div>
-        
+
         <motion.button
-          onClick={() => window.location.href = '/questions'}
+          onClick={() => (window.location.href = '/questions')}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
@@ -103,7 +97,7 @@ const QuestionSets: React.FC = () => {
           message="Create your first question set to organize and practice specific interview topics."
           icon={<FolderOpen className="w-12 h-12 text-gray-400" />}
           actionLabel="Create Question Set"
-          onAction={() => window.location.href = '/questions'}
+          onAction={() => (window.location.href = '/questions')}
         />
       ) : (
         <motion.div
@@ -122,7 +116,7 @@ const QuestionSets: React.FC = () => {
               <QuestionSetCard
                 id={set.id}
                 name={set.name}
-                description={set.description || ""}
+                description={set.description || ''}
                 jobTitle={set.job_title}
                 questionCount={getQuestionCount(set.question_ids)}
                 onSelect={() => console.log(`Selected set ${set.id}`)}

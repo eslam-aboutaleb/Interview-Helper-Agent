@@ -1,18 +1,21 @@
+# Development stack with hot-reload.
+# All credentials come from the environment / .env file.
+
 services:
   db:
     image: postgres:15
     container_name: interview-prep-db
     environment:
-      POSTGRES_DB: interview_prep
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${DB_NAME:-interview_prep}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
-      - "5432:5432"
+      - '${DB_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-postgres}']
       interval: 30s
       timeout: 10s
       retries: 5
@@ -21,10 +24,20 @@ services:
     build: ./backend
     container_name: interview-prep-backend
     environment:
-      DATABASE_URL: postgresql://postgres:password@db:5432/interview_prep
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/interview_prep}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_FALLBACK_MODELS: ${LLM_FALLBACK_MODELS:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "8000:8000"
+      - '${BACKEND_PORT:-8000}:8000'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
@@ -37,11 +50,16 @@ services:
     build: ./frontend
     container_name: interview-prep-frontend
     ports:
-      - "80:80"
+      - '${FRONTEND_PORT:-80}:80'
     depends_on:
-      - backend
-    environment:
-      REACT_APP_API_URL: http://ec2-13-48-71-121.eu-north-1.compute.amazonaws.com:8000
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     develop:
       watch:
         - path: ./frontend

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, XCircle } from 'lucide-react';
+import { XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface ErrorBoundaryProps {
@@ -21,7 +21,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
     };
   }
 
@@ -34,7 +34,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     console.error('ErrorBoundary caught an error:', error, errorInfo);
 
     // Send error to monitoring service (e.g., Sentry)
-    if (process.env.NODE_ENV === 'production') {
+    if (import.meta.env.PROD) {
       // errorTrackingService.captureException(error);
     }
   }
@@ -43,7 +43,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
     });
   };
 
@@ -69,15 +69,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 </div>
               </div>
 
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                Oops! Something went wrong
-              </h1>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Oops! Something went wrong</h1>
 
               <p className="text-gray-600 mb-6">
                 We encountered an unexpected error. Please try refreshing the page.
               </p>
 
-              {process.env.NODE_ENV === 'development' && this.state.error && (
+              {import.meta.env.DEV && this.state.error && (
                 <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left overflow-auto max-h-48 mb-6">
                   <p className="text-xs font-mono text-red-600 break-words">
                     {this.state.error.toString()}

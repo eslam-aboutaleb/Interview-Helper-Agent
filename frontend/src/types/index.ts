@@ -56,3 +56,70 @@ export interface QuestionUpdateRequest {
   is_flagged?: boolean;
   tags?: string;
 }
+
+/* ---------- Mock interview ---------- */
+
+export interface InterviewSessionCreate {
+  job_title: string;
+  session_type?: 'technical' | 'behavioral' | 'mixed';
+  difficulty?: number;
+  max_turns?: number;
+  document_id?: number | null;
+}
+
+export interface InterviewSession {
+  id: number;
+  user_id: number;
+  job_title: string;
+  session_type: string;
+  difficulty: number;
+  target_difficulty: number;
+  status: 'active' | 'completed';
+  current_turn: number;
+  max_turns: number;
+  created_at: string;
+  updated_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface InterviewMessage {
+  id: number;
+  session_id: number;
+  role: 'interviewer' | 'candidate' | 'system';
+  content: string;
+  created_at: string;
+}
+
+export interface InterviewAnswerRequest {
+  answer: string;
+}
+
+export interface InterviewEvaluation {
+  overall_score: number;
+  technical_score: number;
+  communication_score: number;
+  completeness_score: number;
+  strengths?: string[];
+  gaps?: string[];
+  tips?: string[];
+  next_action?: string;
+}
+
+export interface InterviewTurnResponse {
+  completed: boolean;
+  next_question: string | null;
+  evaluation: InterviewEvaluation;
+  current_difficulty: number | null;
+  turn: number | null;
+  summary: Record<string, unknown> | null;
+}
+
+export interface ModelAnswerRequest {
+  question: string;
+  question_type?: 'technical' | 'behavioral';
+}
+
+export interface ModelAnswerResponse {
+  question: string;
+  model_answer: string | null;
+}

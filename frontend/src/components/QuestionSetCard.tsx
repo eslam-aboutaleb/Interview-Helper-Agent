@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 
 interface QuestionSetCardProps {
   id: number;
@@ -10,7 +10,6 @@ interface QuestionSetCardProps {
 }
 
 const QuestionSetCard: React.FC<QuestionSetCardProps> = ({
-  id,
   name,
   description,
   jobTitle,

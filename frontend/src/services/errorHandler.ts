@@ -8,7 +8,7 @@ export enum ErrorType {
   AUTH = 'AUTH_ERROR',
   NOTFOUND = 'NOT_FOUND_ERROR',
   SERVER = 'SERVER_ERROR',
-  UNKNOWN = 'UNKNOWN_ERROR'
+  UNKNOWN = 'UNKNOWN_ERROR',
 }
 
 // Error response type (using type instead of interface)
@@ -25,7 +25,7 @@ export function parseAxiosError(error: unknown): ErrorResponse {
     return {
       type: ErrorType.UNKNOWN,
       message: 'An unexpected error occurred. Please try again.',
-      details: { error }
+      details: { error },
     };
   }
 
@@ -38,18 +38,19 @@ export function parseAxiosError(error: unknown): ErrorResponse {
     return {
       type: ErrorType.NETWORK,
       message: 'Network connection failed. Please check your internet and try again.',
-      details: { originalError: axiosError.message }
+      details: { originalError: axiosError.message },
     };
   }
 
   // Validation error (400)
   if (status === 400) {
-    const message = data?.detail || data?.message || 'Invalid input. Please check the highlighted fields.';
+    const message =
+      data?.detail || data?.message || 'Invalid input. Please check the highlighted fields.';
     return {
       type: ErrorType.VALIDATION,
       message,
       statusCode: 400,
-      details: data
+      details: data,
     };
   }
 
@@ -59,7 +60,7 @@ export function parseAxiosError(error: unknown): ErrorResponse {
       type: ErrorType.AUTH,
       message: "You don't have permission to perform this action. Please log in again.",
       statusCode: 401,
-      details: data
+      details: data,
     };
   }
 
@@ -69,7 +70,7 @@ export function parseAxiosError(error: unknown): ErrorResponse {
       type: ErrorType.NOTFOUND,
       message: 'The requested resource was not found. It may have been deleted.',
       statusCode: 404,
-      details: data
+      details: data,
     };
   }
 
@@ -79,7 +80,7 @@ export function parseAxiosError(error: unknown): ErrorResponse {
       type: ErrorType.SERVER,
       message: 'Server error. Please try again later.',
       statusCode: status,
-      details: data
+      details: data,
     };
   }
 
@@ -88,7 +89,7 @@ export function parseAxiosError(error: unknown): ErrorResponse {
     type: ErrorType.UNKNOWN,
     message: data?.message || 'An error occurred. Please try again.',
     statusCode: status,
-    details: data
+    details: data,
   };
 }
 
@@ -102,10 +103,10 @@ export function logError(error: ErrorResponse, context?: string): void {
   const errorLog = {
     timestamp: new Date().toISOString(),
     context,
-    ...error
+    ...error,
   };
 
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     console.error('Error Log:', errorLog);
   }
 }
@@ -147,9 +148,7 @@ export function validateFormData(
 // Reusable validation rules
 export const ValidationRules = {
   required: (fieldName: string) => (value: any) =>
-    !value || (typeof value === 'string' && !value.trim())
-      ? `${fieldName} is required`
-      : null,
+    !value || (typeof value === 'string' && !value.trim()) ? `${fieldName} is required` : null,
 
   minLength: (fieldName: string, min: number) => (value: any) =>
     value && typeof value === 'string' && value.length < min
@@ -167,15 +166,11 @@ export const ValidationRules = {
       : null,
 
   maxValue: (fieldName: string, max: number) => (value: any) =>
-    value && typeof value === 'number' && value > max
-      ? `${fieldName} cannot exceed ${max}`
-      : null,
+    value && typeof value === 'number' && value > max ? `${fieldName} cannot exceed ${max}` : null,
 
   email: (fieldName: string) => (value: any) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return value && !emailRegex.test(value)
-      ? `${fieldName} is not valid`
-      : null;
+    return value && !emailRegex.test(value) ? `${fieldName} is not valid` : null;
   },
 
   url: (fieldName: string) => (value: any) => {
@@ -185,5 +180,5 @@ export const ValidationRules = {
     } catch {
       return `${fieldName} is not a valid URL`;
     }
-  }
+  },
 };

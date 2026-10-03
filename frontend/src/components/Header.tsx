@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Brain, Home, MessageSquare, Plus, BarChart3 } from 'lucide-react';
+import { Brain, Home, MessageSquare, Plus, BarChart3, Video } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Header: React.FC = () => {
@@ -10,6 +10,7 @@ const Header: React.FC = () => {
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/questions', label: 'Questions', icon: MessageSquare },
     { path: '/generate', label: 'Generate', icon: Plus },
+    { path: '/interview', label: 'Mock Interview', icon: Video },
     { path: '/stats', label: 'Statistics', icon: BarChart3 },
   ];
 
@@ -21,7 +22,7 @@ const Header: React.FC = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-3 group">
-            <motion.div 
+            <motion.div
               className="p-2 bg-gradient-to-br from-gray-700 to-gray-800 rounded-xl shadow-medium group-hover:shadow-strong transition-all duration-300"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -39,11 +40,7 @@ const Header: React.FC = () => {
           {/* Navigation */}
           <nav className="hidden md:flex items-center space-x-2">
             {navItems.map(({ path, label, icon: Icon }) => (
-              <Link
-                key={path}
-                to={path}
-                className="relative group"
-              >
+              <Link key={path} to={path} className="relative group">
                 <motion.div
                   className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-200 ${
                     isActive(path)
