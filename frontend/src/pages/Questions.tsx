@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -46,6 +46,13 @@ const Questions: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [searchTerm]);
 
+  const searchParams = {
+    limit: 1000,
+    ...(selectedType !== 'all' && { question_type: selectedType }),
+    ...(selectedJobTitle !== 'all' && { job_title: selectedJobTitle }),
+    ...(selectedCompany !== 'all' && { company: selectedCompany }),
+  };
+
   const {
     data: questions = [],
     isLoading,
@@ -53,8 +60,17 @@ const Questions: React.FC = () => {
     error,
     refetch,
   } = useQuery<Question[]>({
-    queryKey: ['questions', 'all', { q: debouncedSearch }],
-    queryFn: () => questionsApi.search(debouncedSearch, { limit: 1000 }).then((r) => r.data),
+    queryKey: [
+      'questions',
+      'all',
+      {
+        q: debouncedSearch,
+        question_type: selectedType,
+        job_title: selectedJobTitle,
+        company: selectedCompany,
+      },
+    ],
+    queryFn: () => questionsApi.search(debouncedSearch, searchParams).then((r) => r.data),
   });
 
   const { data: jobTitles = [] } = useQuery<string[]>({
@@ -148,15 +164,6 @@ const Questions: React.FC = () => {
       toast.error(`Failed to import questions: ${message}`);
     },
   });
-
-  const filteredQuestions = useMemo(() => {
-    return questions.filter((question) => {
-      const matchesType = selectedType === 'all' || question.question_type === selectedType;
-      const matchesJob = selectedJobTitle === 'all' || question.job_title === selectedJobTitle;
-      const matchesCompany = selectedCompany === 'all' || question.company === selectedCompany;
-      return matchesType && matchesJob && matchesCompany;
-    });
-  }, [questions, selectedType, selectedJobTitle, selectedCompany]);
 
   const clearFilters = () => {
     setSearchTerm('');
@@ -379,8 +386,6 @@ const Questions: React.FC = () => {
           {/* Results Count */}
           <div className="flex items-center justify-center md:justify-start text-sm text-gray-600 bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
             <Filter className="w-4 h-4 mr-2" aria-hidden="true" />
-            <span className="font-medium">{filteredQuestions.length}</span>
-            <span className="mx-1">of</span>
             <span className="font-medium">{questions.length}</span>
             <span className="ml-1">questions</span>
           </div>
@@ -397,10 +402,11 @@ const Questions: React.FC = () => {
             actionLabel="Clear Search"
             onAction={clearFilters}
           />
-        ) : filteredQuestions.length === 0 && questions.length > 0 ? (
+        ) : questions.length === 0 &&
+          (selectedType !== 'all' || selectedJobTitle !== 'all' || selectedCompany !== 'all') ? (
           <EmptyState
             title="No questions match your filters"
-            message={`Try adjusting your filters. There are ${questions.length} questions available in total.`}
+            message="Try adjusting your filters or clear them to see all questions."
             icon={<MessageSquare className="w-12 h-12 text-gray-400" />}
             actionLabel="Clear Filters"
             onAction={clearFilters}
@@ -414,7 +420,7 @@ const Questions: React.FC = () => {
             onAction={() => (window.location.href = '/generate')}
           />
         ) : (
-          filteredQuestions.map((question, index) => (
+          questions.map((question, index) => (
             <QuestionCard
               key={question.id}
               question={question}

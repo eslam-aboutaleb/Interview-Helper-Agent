@@ -163,6 +163,7 @@ export interface QuestionSearchParams {
   limit?: number;
   job_title?: string;
   question_type?: string;
+  company?: string;
   flagged_only?: boolean;
 }
 
