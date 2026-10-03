@@ -194,17 +194,17 @@ All routes are mounted under `/api`. Authentication uses `Authorization: Bearer 
 
 | Method | Path           | Auth     | Description                                  |
 | ------ | -------------- | -------- | -------------------------------------------- |
-| POST   | `/generate`    | optional | Generate questions with the LLM              |
+| POST   | `/generate`    | user     | Generate questions with the LLM              |
 | GET    | `/`            | public   | List/search/filter questions (paginated)     |
 | GET    | `/export`      | public   | Export as JSON or CSV (`?format=json\|csv`)  |
-| POST   | `/import`      | optional | Bulk-import questions (per-entry validation) |
+| POST   | `/import`      | user     | Bulk-import questions (per-entry validation) |
 | GET    | `/{id}`        | optional | Get one question                             |
-| POST   | `/`            | optional | Create a question manually                   |
-| PUT    | `/{id}`        | optional | Update a question                            |
-| DELETE | `/{id}`        | optional | Delete a question                            |
-| POST   | `/sets`        | public   | Create a question set                        |
+| POST   | `/`            | user     | Create a question manually                   |
+| PUT    | `/{id}`        | user     | Update a question                            |
+| DELETE | `/{id}`        | user     | Delete a question                            |
+| POST   | `/sets`        | user     | Create a question set                        |
 | GET    | `/sets/`       | public   | List question sets                           |
-| POST   | `/rate`        | optional | Rate a question (1.0–5.0)                    |
+| POST   | `/rate`        | user     | Rate a question (1.0–5.0)                    |
 | GET    | `/job-titles/` | public   | List distinct job titles                     |
 
 **Query params (list & export):** `skip`, `limit` (1–1000), `q` (free-text search, max 200 chars), `job_title`, `question_type` (`technical`/`behavioral`/`mixed`), `flagged_only`.

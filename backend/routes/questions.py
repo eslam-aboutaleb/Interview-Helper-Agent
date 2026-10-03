@@ -35,7 +35,7 @@ from services.gemini_service import GeminiService, GeminiServiceError
 from services.history_service import record_action
 
 # Import auth dependency
-from deps import get_optional_user
+from deps import get_current_user, get_optional_user
 
 # Initialize FastAPI router for question-related endpoints
 router = APIRouter()
@@ -223,7 +223,7 @@ async def generate_questions(
     request: QuestionGenerateRequest,
     db: Session = Depends(get_db),
     gemini_service: GeminiService = Depends(get_gemini_service),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate new interview questions using AI
 
@@ -231,13 +231,14 @@ async def generate_questions(
         request: Contains job_title, count, question_type, and optional company
         db: Database session dependency
         gemini_service: Lazily-initialized Gemini service
-        current_user: Authenticated user (optional)
+        current_user: Authenticated user
 
     Returns:
         List of generated Question objects saved to database
 
     Raises:
         HTTPException 400: If request parameters are invalid
+        HTTPException 401: If the caller is not authenticated
         HTTPException 500: If generation or database operations fail
         HTTPException 503: If AI service is unavailable
     """
@@ -261,7 +262,7 @@ async def generate_questions(
         # Save each generated question to the database
         saved_questions = []
         for q_data in generated_questions:
-            q_data["user_id"] = current_user.id if current_user else None
+            q_data["user_id"] = current_user.id
             # Company mode: tag the whole batch with the requested company.
             q_data["company"] = request.company
             question = Question(**q_data)  # Create ORM object from dict
@@ -271,7 +272,7 @@ async def generate_questions(
             saved_questions.append(question)
 
         # Track generation in user history
-        if current_user and saved_questions:
+        if saved_questions:
             record_action(
                 db,
                 action="generated",
@@ -479,7 +480,7 @@ async def export_questions(
 async def import_questions(
     payload: List[Any],
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Import questions from a JSON array
 
@@ -489,13 +490,14 @@ async def import_questions(
     Args:
         payload: JSON array of question objects (``QuestionCreate`` shape)
         db: Database session dependency
-        current_user: Authenticated user (optional)
+        current_user: Authenticated user
 
     Returns:
         Summary dict with ``imported``, ``skipped`` and per-entry ``errors``
 
     Raises:
         HTTPException 400: If the payload is empty
+        HTTPException 401: If the caller is not authenticated
         HTTPException 422: If the body is not a JSON array
         HTTPException 500: If the batch cannot be committed
     """
@@ -515,7 +517,7 @@ async def import_questions(
             if not isinstance(entry, dict):
                 raise ValueError("entry must be a JSON object")
             data = QuestionCreate.model_validate(entry).model_dump()
-            data["user_id"] = current_user.id if current_user else None
+            data["user_id"] = current_user.id
             question = Question(**data)
         except ValidationError as exc:
             skipped += 1
@@ -545,7 +547,7 @@ async def import_questions(
         )
 
     # Track the import in user history
-    if current_user and imported:
+    if imported:
         record_action(
             db,
             action="created",
@@ -637,7 +639,7 @@ async def get_question(
 async def create_question(
     question: QuestionCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new question manually
 
@@ -646,12 +648,14 @@ async def create_question(
     Args:
         question: Pydantic model containing question data
         db: Database session dependency
+        current_user: Authenticated user
 
     Returns:
         Created Question object with database-generated ID and timestamps
 
     Raises:
         HTTPException 400: If question data is invalid or incomplete
+        HTTPException 401: If the caller is not authenticated
         HTTPException 409: If duplicate question exists
         HTTPException 500: If database operation fails
     """
@@ -671,7 +675,7 @@ async def create_question(
 
         # Convert Pydantic model to dictionary and create ORM object
         data = question.model_dump()
-        data["user_id"] = current_user.id if current_user else None
+        data["user_id"] = current_user.id
         db_question = Question(**data)
         # Add to session and commit to database
         db.add(db_question)
@@ -679,8 +683,7 @@ async def create_question(
         # Refresh to get auto-generated values
         db.refresh(db_question)
         # Track creation in user history
-        if current_user:
-            record_action(db, action="created", user_id=current_user.id, question_id=db_question.id)
+        record_action(db, action="created", user_id=current_user.id, question_id=db_question.id)
         return db_question
 
     except HTTPException:
@@ -702,7 +705,7 @@ async def update_question(
     question_id: int,
     question_update: QuestionUpdate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Update an existing question
 
@@ -712,12 +715,14 @@ async def update_question(
         question_id: The unique identifier of the question to update
         question_update: Pydantic model with fields to update
         db: Database session dependency
+        current_user: Authenticated user
 
     Returns:
         Updated Question object with new values
 
     Raises:
         HTTPException 400: If question_id is invalid or update data is invalid
+        HTTPException 401: If the caller is not authenticated
         HTTPException 404: If question not found
         HTTPException 500: If update operation fails
     """
@@ -753,7 +758,7 @@ async def update_question(
         # Refresh to get updated values
         db.refresh(question)
         # Track flag changes in user history
-        if current_user and "is_flagged" in update_data:
+        if "is_flagged" in update_data:
             record_action(
                 db,
                 action="flagged",
@@ -781,7 +786,7 @@ async def update_question(
 async def delete_question(
     question_id: int,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Delete a question
 
@@ -790,12 +795,14 @@ async def delete_question(
     Args:
         question_id: The unique identifier of the question to delete
         db: Database session dependency
+        current_user: Authenticated user
 
     Returns:
         No content on success
 
     Raises:
         HTTPException 400: If question_id is invalid
+        HTTPException 401: If the caller is not authenticated
         HTTPException 404: If question not found
         HTTPException 500: If delete operation fails
     """
@@ -814,8 +821,7 @@ async def delete_question(
             )
 
         # Track deletion in user history before removing
-        if current_user:
-            record_action(db, action="deleted", user_id=current_user.id, question_id=question.id)
+        record_action(db, action="deleted", user_id=current_user.id, question_id=question.id)
         # Remove from database
         db.delete(question)
         db.commit()
@@ -832,7 +838,11 @@ async def delete_question(
 
 
 @router.post("/sets", response_model=QuestionSetSchema, status_code=status.HTTP_201_CREATED)
-async def create_question_set(question_set: QuestionSetCreate, db: Session = Depends(get_db)):
+async def create_question_set(
+    question_set: QuestionSetCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Create a new question set
 
     Creates a collection of questions under a single set for organized management.
@@ -840,12 +850,14 @@ async def create_question_set(question_set: QuestionSetCreate, db: Session = Dep
     Args:
         question_set: Pydantic model containing set data and question IDs
         db: Database session dependency
+        current_user: Authenticated user
 
     Returns:
         Created QuestionSet object with database-generated ID and timestamps
 
     Raises:
         HTTPException 400: If set data is invalid or question IDs are invalid
+        HTTPException 401: If the caller is not authenticated
         HTTPException 404: If one or more question IDs don't exist
         HTTPException 500: If database operation fails
     """
@@ -935,7 +947,7 @@ async def get_question_sets(
 async def rate_question(
     rating: UserRatingCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Rate a question
 
@@ -944,12 +956,14 @@ async def rate_question(
     Args:
         rating: Pydantic model containing rating data (question_id, rating_value)
         db: Database session dependency
+        current_user: Authenticated user
 
     Returns:
         Created UserRating object with database-generated ID and timestamp
 
     Raises:
         HTTPException 400: If rating data is invalid
+        HTTPException 401: If the caller is not authenticated
         HTTPException 404: If question doesn't exist
         HTTPException 500: If database operation fails
     """
@@ -973,14 +987,13 @@ async def rate_question(
         # Refresh to get auto-generated values
         db.refresh(db_rating)
         # Track rating in user history
-        if current_user:
-            record_action(
-                db,
-                action="rated",
-                user_id=current_user.id,
-                question_id=rating.question_id,
-                context={"rating": db_rating.rating},
-            )
+        record_action(
+            db,
+            action="rated",
+            user_id=current_user.id,
+            question_id=rating.question_id,
+            context={"rating": db_rating.rating},
+        )
         return db_rating
 
     except HTTPException:

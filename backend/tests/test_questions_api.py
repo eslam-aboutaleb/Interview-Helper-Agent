@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import uuid
 from datetime import datetime
 
 import pytest
@@ -66,7 +67,9 @@ def gemini_override(monkeypatch):
     return fake
 
 
-def register(client, email="user@example.com", password="password123"):
+def register(client, email=None, password="password123"):
+    if email is None:
+        email = f"user-{uuid.uuid4().hex[:12]}@example.com"
     response = client.post(
         "/api/auth/register",
         json={"email": email, "password": password},
@@ -90,9 +93,11 @@ class TestGenerateQuestions:
                 "tags": "data-structures",
             }
         ]
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 1, "question_type": "technical"},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201
         data = response.json()
@@ -124,37 +129,46 @@ class TestGenerateQuestions:
 
     def test_generate_empty_job_title(self, client, gemini_override):
         # Pydantic rejects the blank job title before the handler runs.
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "   ", "count": 1},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_generate_count_out_of_range(self, client, gemini_override):
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 0},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 101},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_generate_service_returns_nothing(self, client, gemini_override):
         gemini_override.questions = []
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 1},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 503
 
     def test_generate_gemini_error(self, client, gemini_override):
         gemini_override.error = GeminiServiceError("provider down")
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 1},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 503
         assert "AI service unavailable" in response.json()["detail"]
@@ -164,9 +178,11 @@ class TestGenerateQuestions:
             raise ValueError("bad input")
 
         monkeypatch.setattr(FakeGeminiService, "generate_questions", bad_generate)
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 1},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 400
 
@@ -175,9 +191,11 @@ class TestGenerateQuestions:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(FakeGeminiService, "generate_questions", bad_generate)
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 1},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 500
 
@@ -244,6 +262,7 @@ class TestListQuestions:
 
 class TestQuestionCRUD:
     def _create(self, client, text="What is a binary search tree?"):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -252,6 +271,7 @@ class TestQuestionCRUD:
                 "question_type": "technical",
                 "difficulty": 3,
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201, response.text
         return response.json()
@@ -280,13 +300,16 @@ class TestQuestionCRUD:
         assert any(e.action == "created" for e in entries)
 
     def test_create_empty_text(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={"job_title": "SWE", "question_text": "  ", "question_type": "technical"},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_create_invalid_type(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -294,10 +317,12 @@ class TestQuestionCRUD:
                 "question_text": "Explain REST constraints in detail?",
                 "question_type": "invalid",
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_create_invalid_difficulty(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -306,6 +331,7 @@ class TestQuestionCRUD:
                 "question_type": "technical",
                 "difficulty": 9,
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
@@ -329,9 +355,11 @@ class TestQuestionCRUD:
 
     def test_update(self, client):
         question = self._create(client)
+        user = register(client)
         response = client.put(
             f"/api/questions/{question['id']}",
             json={"difficulty": 5, "is_flagged": True},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 200
         data = response.json()
@@ -353,21 +381,29 @@ class TestQuestionCRUD:
         assert any(e.action == "flagged" for e in entries)
 
     def test_update_not_found(self, client):
-        response = client.put("/api/questions/99999", json={"difficulty": 4})
+        user = register(client)
+        response = client.put("/api/questions/99999", json={"difficulty": 4}, headers=auth_headers(user["token"]))
         assert response.status_code == 404
 
     def test_update_invalid_id(self, client):
-        response = client.put("/api/questions/-1", json={"difficulty": 4})
+        user = register(client)
+        response = client.put("/api/questions/-1", json={"difficulty": 4}, headers=auth_headers(user["token"]))
         assert response.status_code == 400
 
     def test_update_invalid_difficulty(self, client):
         question = self._create(client)
-        response = client.put(f"/api/questions/{question['id']}", json={"difficulty": 10})
+        user = register(client)
+        response = client.put(
+            f"/api/questions/{question['id']}",
+            json={"difficulty": 10},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 422
 
     def test_delete(self, client):
         question = self._create(client)
-        response = client.delete(f"/api/questions/{question['id']}")
+        user = register(client)
+        response = client.delete(f"/api/questions/{question['id']}", headers=auth_headers(user["token"]))
         assert response.status_code == 204
         assert client.get(f"/api/questions/{question['id']}").status_code == 404
 
@@ -382,16 +418,20 @@ class TestQuestionCRUD:
         assert any(e.action == "deleted" for e in entries)
 
     def test_delete_not_found(self, client):
-        response = client.delete("/api/questions/99999")
+        user = register(client)
+        response = client.delete("/api/questions/99999", headers=auth_headers(user["token"]))
         assert response.status_code == 404
 
     def test_delete_invalid_id(self, client):
-        response = client.delete("/api/questions/0")
+        user = register(client)
+        response = client.delete("/api/questions/0", headers=auth_headers(user["token"]))
         assert response.status_code == 400
 
 
 class TestQuestionSets:
     def test_create_set(self, client):
+        user = register(client)
+        headers = auth_headers(user["token"])
         q1 = client.post(
             "/api/questions/",
             json={
@@ -399,6 +439,7 @@ class TestQuestionSets:
                 "question_text": "What is polymorphism in OOP design?",
                 "question_type": "technical",
             },
+            headers=headers,
         ).json()
         q2 = client.post(
             "/api/questions/",
@@ -407,6 +448,7 @@ class TestQuestionSets:
                 "question_text": "How do you design a URL shortener system?",
                 "question_type": "technical",
             },
+            headers=headers,
         ).json()
         response = client.post(
             "/api/questions/sets",
@@ -416,36 +458,45 @@ class TestQuestionSets:
                 "job_title": "SWE",
                 "question_ids": [q1["id"], q2["id"]],
             },
+            headers=headers,
         )
         assert response.status_code == 201, response.text
         data = response.json()
         assert data["name"] == "System Design"
 
     def test_create_set_empty_name(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/sets",
             json={"name": "  ", "job_title": "SWE", "question_ids": [1]},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_create_set_empty_job_title(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/sets",
             json={"name": "Set", "job_title": "  ", "question_ids": [1]},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_create_set_empty_ids(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/sets",
             json={"name": "Set", "job_title": "SWE", "question_ids": []},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_create_set_missing_question(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/sets",
             json={"name": "Set", "job_title": "SWE", "question_ids": [99999]},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 404
 
@@ -457,6 +508,7 @@ class TestQuestionSets:
 
 class TestRateQuestion:
     def _create(self, client):
+        user = register(client)
         return client.post(
             "/api/questions/",
             json={
@@ -464,13 +516,16 @@ class TestRateQuestion:
                 "question_text": "What is the CAP theorem in distributed systems?",
                 "question_type": "technical",
             },
+            headers=auth_headers(user["token"]),
         ).json()
 
     def test_rate_success(self, client):
         question = self._create(client)
+        user = register(client)
         response = client.post(
             "/api/questions/rate",
             json={"question_id": question["id"], "rating": 4.5, "feedback": "Great question"},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201
         data = response.json()
@@ -491,19 +546,101 @@ class TestRateQuestion:
         assert any(e.action == "rated" for e in entries)
 
     def test_rate_question_not_found(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/rate",
             json={"question_id": 99999, "rating": 4.0},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 404
 
     def test_rate_out_of_range(self, client):
         question = self._create(client)
+        user = register(client)
         response = client.post(
             "/api/questions/rate",
             json={"question_id": question["id"], "rating": 6.0},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
+
+
+class TestQuestionMutationAuth:
+    """Every mutating question endpoint requires an authenticated user (H1)."""
+
+    def test_generate_requires_auth(self, client):
+        body = {"job_title": "SWE", "count": 1}
+        assert client.post("/api/questions/generate", json=body).status_code == 401
+        response = client.post(
+            "/api/questions/generate",
+            json=body,
+            headers=auth_headers("invalid-token"),
+        )
+        assert response.status_code == 401
+
+    def test_import_requires_auth(self, client):
+        body = [
+            {
+                "job_title": "SWE",
+                "question_text": "Explain how a hash table works?",
+                "question_type": "technical",
+            }
+        ]
+        assert client.post("/api/questions/import", json=body).status_code == 401
+        response = client.post(
+            "/api/questions/import",
+            json=body,
+            headers=auth_headers("invalid-token"),
+        )
+        assert response.status_code == 401
+
+    def test_create_requires_auth(self, client):
+        body = {
+            "job_title": "SWE",
+            "question_text": "Explain how a hash table works?",
+            "question_type": "technical",
+        }
+        assert client.post("/api/questions/", json=body).status_code == 401
+        response = client.post(
+            "/api/questions/",
+            json=body,
+            headers=auth_headers("invalid-token"),
+        )
+        assert response.status_code == 401
+
+    def test_update_requires_auth(self, client):
+        assert client.put("/api/questions/1", json={"difficulty": 4}).status_code == 401
+        response = client.put(
+            "/api/questions/1",
+            json={"difficulty": 4},
+            headers=auth_headers("invalid-token"),
+        )
+        assert response.status_code == 401
+
+    def test_delete_requires_auth(self, client):
+        assert client.delete("/api/questions/1").status_code == 401
+        response = client.delete("/api/questions/1", headers=auth_headers("invalid-token"))
+        assert response.status_code == 401
+
+    def test_create_set_requires_auth(self, client):
+        body = {"name": "Set", "job_title": "SWE", "question_ids": [1]}
+        assert client.post("/api/questions/sets", json=body).status_code == 401
+        response = client.post(
+            "/api/questions/sets",
+            json=body,
+            headers=auth_headers("invalid-token"),
+        )
+        assert response.status_code == 401
+
+    def test_rate_requires_auth(self, client):
+        body = {"question_id": 1, "rating": 4.0}
+        assert client.post("/api/questions/rate", json=body).status_code == 401
+        response = client.post(
+            "/api/questions/rate",
+            json=body,
+            headers=auth_headers("invalid-token"),
+        )
+        assert response.status_code == 401
 
 
 class TestJobTitles:
@@ -550,6 +687,7 @@ class TestCompanyMode:
 
     # -- create / update ------------------------------------------------
     def test_create_question_with_company(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -558,11 +696,13 @@ class TestCompanyMode:
                 "question_type": "technical",
                 "company": "Acme Corp",
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201, response.text
         assert response.json()["company"] == "Acme Corp"
 
     def test_create_question_without_company(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -570,11 +710,13 @@ class TestCompanyMode:
                 "question_text": "Explain how a hash table works?",
                 "question_type": "technical",
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201
         assert response.json()["company"] is None
 
     def test_blank_company_is_normalized_to_null(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -583,11 +725,13 @@ class TestCompanyMode:
                 "question_type": "technical",
                 "company": "   ",
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201
         assert response.json()["company"] is None
 
     def test_company_is_trimmed(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -596,11 +740,13 @@ class TestCompanyMode:
                 "question_type": "technical",
                 "company": "  Globex  ",
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201
         assert response.json()["company"] == "Globex"
 
     def test_company_longer_than_100_is_rejected(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/",
             json={
@@ -609,24 +755,40 @@ class TestCompanyMode:
                 "question_type": "technical",
                 "company": "c" * 101,
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 422
 
     def test_update_company(self, client, db_session):
         question = self._seed(db_session, text="Explain how a trie is structured?")
-        response = client.put(f"/api/questions/{question.id}", json={"company": "Initech"})
+        user = register(client)
+        response = client.put(
+            f"/api/questions/{question.id}",
+            json={"company": "Initech"},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         assert response.json()["company"] == "Initech"
 
     def test_update_company_to_blank_clears_it(self, client, db_session):
         question = self._seed(db_session, text="Explain how a trie is structured?", company="Initech")
-        response = client.put(f"/api/questions/{question.id}", json={"company": "  "})
+        user = register(client)
+        response = client.put(
+            f"/api/questions/{question.id}",
+            json={"company": "  "},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         assert response.json()["company"] is None
 
     def test_update_without_company_keeps_the_value(self, client, db_session):
         question = self._seed(db_session, text="Explain how a trie is structured?", company="Initech")
-        response = client.put(f"/api/questions/{question.id}", json={"difficulty": 4})
+        user = register(client)
+        response = client.put(
+            f"/api/questions/{question.id}",
+            json={"difficulty": 4},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         assert response.json()["company"] == "Initech"
 
@@ -771,9 +933,11 @@ class TestCompanyMode:
                 "difficulty": 3,
             }
         ]
+        user = register(client)
         response = client.post(
             "/api/questions/generate",
             json={"job_title": "SWE", "count": 1, "company": "Acme Corp"},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 201
         assert response.json()[0]["company"] == "Acme Corp"
@@ -787,11 +951,17 @@ class TestCompanyMode:
                 "difficulty": 3,
             }
         ]
-        response = client.post("/api/questions/generate", json={"job_title": "SWE", "count": 1})
+        user = register(client)
+        response = client.post(
+            "/api/questions/generate",
+            json={"job_title": "SWE", "count": 1},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 201
         assert response.json()[0]["company"] is None
 
     def test_import_accepts_company(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/import",
             json=[
@@ -808,12 +978,14 @@ class TestCompanyMode:
                     "company": "Globex",
                 },
             ],
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 200
         assert response.json()["imported"] == 2
         assert client.get("/api/questions/companies/").json() == ["Acme Corp", "Globex"]
 
     def test_company_longer_than_100_is_skipped_on_import(self, client):
+        user = register(client)
         response = client.post(
             "/api/questions/import",
             json=[
@@ -824,6 +996,7 @@ class TestCompanyMode:
                     "company": "c" * 101,
                 }
             ],
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 200
         assert response.json()["imported"] == 0
@@ -961,17 +1134,17 @@ class TestRouteLevelValidation:
 
         empty_name = QuestionSetCreate.model_construct(name="   ", job_title="SWE", question_ids=[1], description=None)
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(create_question_set(question_set=empty_name, db=handler_db))
+            asyncio.run(create_question_set(question_set=empty_name, db=handler_db, current_user=None))
         assert exc_info.value.status_code == 400
 
         empty_title = QuestionSetCreate.model_construct(name="Set", job_title="  ", question_ids=[1], description=None)
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(create_question_set(question_set=empty_title, db=handler_db))
+            asyncio.run(create_question_set(question_set=empty_title, db=handler_db, current_user=None))
         assert exc_info.value.status_code == 400
 
         empty_ids = QuestionSetCreate.model_construct(name="Set", job_title="SWE", question_ids=[], description=None)
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(create_question_set(question_set=empty_ids, db=handler_db))
+            asyncio.run(create_question_set(question_set=empty_ids, db=handler_db, current_user=None))
         assert exc_info.value.status_code == 400
 
     def test_rate_out_of_range_guard(self, client, handler_db):
@@ -1019,6 +1192,7 @@ class TestQuestionErrorPaths:
         def failing_add(obj):
             raise RuntimeError("insert failed")
 
+        user = register(client)
         monkeypatch.setattr(db_session, "add", failing_add)
         response = client.post(
             "/api/questions/",
@@ -1027,12 +1201,14 @@ class TestQuestionErrorPaths:
                 "question_text": "Explain how a hash table works?",
                 "question_type": "technical",
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 500
 
     def test_update_question_db_error(self, client, db_session, monkeypatch):
-        from models import Question
+        from models import Question, UserSession
 
+        user = register(client)
         q = Question(
             job_title="SWE",
             question_text="Explain how a hash table works?",
@@ -1042,16 +1218,27 @@ class TestQuestionErrorPaths:
         db_session.commit()
         db_session.refresh(q)
 
+        real_commit = db_session.commit
+
         def failing_commit():
+            # The auth dependency commits a dirty UserSession to refresh
+            # last_used_at; let that one through and fail the handler's.
+            if any(isinstance(obj, UserSession) for obj in db_session.dirty):
+                return real_commit()
             raise RuntimeError("commit failed")
 
         monkeypatch.setattr(db_session, "commit", failing_commit)
-        response = client.put(f"/api/questions/{q.id}", json={"difficulty": 4})
+        response = client.put(
+            f"/api/questions/{q.id}",
+            json={"difficulty": 4},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 500
 
     def test_delete_question_db_error(self, client, db_session, monkeypatch):
         from models import Question
 
+        user = register(client)
         q = Question(
             job_title="SWE",
             question_text="Explain how a hash table works?",
@@ -1065,12 +1252,13 @@ class TestQuestionErrorPaths:
             raise RuntimeError("delete failed")
 
         monkeypatch.setattr(db_session, "delete", failing_delete)
-        response = client.delete(f"/api/questions/{q.id}")
+        response = client.delete(f"/api/questions/{q.id}", headers=auth_headers(user["token"]))
         assert response.status_code == 500
 
     def test_create_set_db_error(self, client, db_session, monkeypatch):
         from models import Question
 
+        user = register(client)
         q = Question(
             job_title="SWE",
             question_text="Explain how a hash table works?",
@@ -1090,6 +1278,7 @@ class TestQuestionErrorPaths:
                 "job_title": "SWE",
                 "question_ids": [q.id],
             },
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 500
 
@@ -1104,6 +1293,7 @@ class TestQuestionErrorPaths:
     def test_rate_question_db_error(self, client, db_session, monkeypatch):
         from models import Question
 
+        user = register(client)
         q = Question(
             job_title="SWE",
             question_text="Explain how a hash table works?",
@@ -1120,6 +1310,7 @@ class TestQuestionErrorPaths:
         response = client.post(
             "/api/questions/rate",
             json={"question_id": q.id, "rating": 4.0},
+            headers=auth_headers(user["token"]),
         )
         assert response.status_code == 500
 
@@ -1135,8 +1326,13 @@ class TestQuestionErrorPaths:
         """Question model validators raise ValueError for short text."""
         import asyncio
 
+        from models import User
         from routes.questions import create_question
         from schemas import QuestionCreate
+
+        user = User(email="handler@example.com", hashed_password="hashed")
+        db_session.add(user)
+        db_session.commit()
 
         # model_construct bypasses pydantic so the SQLAlchemy
         # @validates hook fires inside the handler.
@@ -1146,7 +1342,7 @@ class TestQuestionErrorPaths:
             question_type="technical",
         )
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(create_question(question=question, db=db_session, current_user=None))
+            asyncio.run(create_question(question=question, db=db_session, current_user=user))
         assert exc_info.value.status_code == 400
 
     def test_create_set_value_error(self, client, db_session):
@@ -1173,7 +1369,7 @@ class TestQuestionErrorPaths:
             description=None,
         )
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(create_question_set(question_set=question_set, db=db_session))
+            asyncio.run(create_question_set(question_set=question_set, db=db_session, current_user=None))
         assert exc_info.value.status_code == 400
 
 
@@ -1558,13 +1754,19 @@ class TestImportQuestions:
     }
 
     def test_import_valid_payload(self, client, db_session):
+        user = register(client)
         second = dict(self.VALID, question_text="Describe garbage collection in the JVM runtime")
-        response = client.post("/api/questions/import", json=[self.VALID, second])
+        response = client.post(
+            "/api/questions/import",
+            json=[self.VALID, second],
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         assert response.json() == {"imported": 2, "skipped": 0, "errors": []}
         assert len(client.get("/api/questions/").json()) == 2
 
     def test_import_partial_invalid_payload(self, client, db_session):
+        user = register(client)
         payload = [
             self.VALID,
             {"job_title": "SWE", "question_text": "short", "question_type": "technical"},
@@ -1572,7 +1774,11 @@ class TestImportQuestions:
             {"question_text": "Missing the required job title field"},
             "not-an-object",
         ]
-        response = client.post("/api/questions/import", json=payload)
+        response = client.post(
+            "/api/questions/import",
+            json=payload,
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         summary = response.json()
         assert summary["imported"] == 1
@@ -1585,19 +1791,34 @@ class TestImportQuestions:
         assert len(client.get("/api/questions/").json()) == 1
 
     def test_import_all_entries_invalid(self, client):
+        user = register(client)
         payload = [{"job_title": "S", "question_text": "short", "question_type": "nope"}]
-        response = client.post("/api/questions/import", json=payload)
+        response = client.post(
+            "/api/questions/import",
+            json=payload,
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         assert response.json()["imported"] == 0
         assert response.json()["skipped"] == 1
 
     def test_import_empty_payload(self, client):
-        response = client.post("/api/questions/import", json=[])
+        user = register(client)
+        response = client.post(
+            "/api/questions/import",
+            json=[],
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 400
         assert "at least one" in response.json()["detail"]
 
     def test_import_non_array_payload(self, client):
-        response = client.post("/api/questions/import", json={"job_title": "SWE"})
+        user = register(client)
+        response = client.post(
+            "/api/questions/import",
+            json={"job_title": "SWE"},
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 422
 
     def test_import_assigns_user_and_records_history(self, client, db_session):
@@ -1616,18 +1837,27 @@ class TestImportQuestions:
         assert any(e.action == "created" and e.context["source"] == "import" for e in entries)
 
     def test_import_isolates_database_failure_per_entry(self, client, db_session, monkeypatch):
+        from models import Question
+
+        user = register(client)
         real_flush = db_session.flush
-        calls = {"count": 0}
+        failed = {"done": False}
 
         def flaky_flush(*args, **kwargs):
-            calls["count"] += 1
-            if calls["count"] == 1:
+            # Fail the first flush that carries a pending question so
+            # exactly one entry is skipped while the other imports.
+            if not failed["done"] and any(isinstance(obj, Question) for obj in db_session.new):
+                failed["done"] = True
                 raise IntegrityError("INSERT", {}, Exception("duplicate key value"))
             return real_flush(*args, **kwargs)
 
         monkeypatch.setattr(db_session, "flush", flaky_flush)
         second = dict(self.VALID, question_text="Describe garbage collection in the JVM runtime")
-        response = client.post("/api/questions/import", json=[self.VALID, second])
+        response = client.post(
+            "/api/questions/import",
+            json=[self.VALID, second],
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         summary = response.json()
         assert summary["imported"] == 1
@@ -1637,17 +1867,35 @@ class TestImportQuestions:
         assert len(client.get("/api/questions/").json()) == 1
 
     def test_import_commit_failure_returns_500(self, client, db_session, monkeypatch):
+        from models import UserSession
+
+        user = register(client)
+        real_commit = db_session.commit
+
         def failing_commit():
+            # The auth dependency commits a dirty UserSession to refresh
+            # last_used_at; let that one through and fail the handler's.
+            if any(isinstance(obj, UserSession) for obj in db_session.dirty):
+                return real_commit()
             raise RuntimeError("commit failed")
 
         monkeypatch.setattr(db_session, "commit", failing_commit)
-        response = client.post("/api/questions/import", json=[self.VALID])
+        response = client.post(
+            "/api/questions/import",
+            json=[self.VALID],
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 500
 
     def test_import_route_is_not_shadowed_by_dynamic_route(self, client):
+        user = register(client)
         paths = [route.path for route in questions_routes.router.routes]
         assert paths.index("/import") < paths.index("/{question_id}")
-        response = client.post("/api/questions/import", json=[self.VALID])
+        response = client.post(
+            "/api/questions/import",
+            json=[self.VALID],
+            headers=auth_headers(user["token"]),
+        )
         assert response.status_code == 200
         assert response.json()["imported"] == 1
 
