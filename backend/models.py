@@ -320,6 +320,9 @@ class Question(Base):
     question_type = Column(String(50), nullable=False, comment="Type: 'technical', 'behavioral', or 'mixed'")
     difficulty = Column(Integer, default=1, nullable=False, comment="Difficulty level 1-5")
     is_flagged = Column(Boolean, default=False, nullable=False, comment="Whether question is flagged")
+    company = Column(
+        String(100), nullable=True, index=True, comment="Company the question targets (company-specific mode)"
+    )
     tags = Column(String(500), nullable=True, comment="Comma-separated tags")
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, comment="Creation timestamp"
@@ -334,10 +337,12 @@ class Question(Base):
         ),
         CheckConstraint("question_type IN ('technical', 'behavioral', 'mixed')", name="check_question_type"),
         CheckConstraint("difficulty >= 1 AND difficulty <= 5", name="check_difficulty_range"),
+        CheckConstraint("company IS NULL OR LENGTH(company) <= 100", name="check_company_length"),
         Index("idx_job_title_type", "job_title", "question_type"),
         Index("idx_is_flagged", "is_flagged"),
         Index("idx_created_at", "created_at"),
         Index("idx_questions_user_id", "user_id"),
+        Index("idx_company_type", "company", "question_type"),
     )
 
     user = relationship("User", back_populates="questions")
@@ -419,10 +424,25 @@ class Question(Base):
 
         return ",".join(tags_list)
 
+    @validates("company")
+    def validate_company(self, key, value):
+        """Validate and clean the optional company before setting"""
+        if value is None:
+            return None
+
+        value = str(value).strip()
+        if not value:
+            return None
+
+        if len(value) > 100:
+            raise ValueError("company must not exceed 100 characters")
+
+        return value
+
     def __repr__(self):
         return (
             f"<Question(id={self.id}, job_title='{self.job_title}', "
-            f"type='{self.question_type}', difficulty={self.difficulty})>"
+            f"company='{self.company}', type='{self.question_type}', difficulty={self.difficulty})>"
         )
 
 

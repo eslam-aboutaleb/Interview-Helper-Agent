@@ -18,6 +18,7 @@ import {
   ModelAnswerResponse,
   UserDocument,
   SkillGap,
+  LearningPlan,
 } from '../types';
 import { parseAxiosError } from './errorHandler';
 
@@ -75,6 +76,9 @@ export const questionsApi = {
 
   getJobTitles: () => api.get<string[]>('/api/questions/job-titles/'),
 
+  // Distinct companies tagged on questions, for the company filter.
+  getCompanies: () => api.get<string[]>('/api/questions/companies/'),
+
   // Streams the export as a blob so the caller can trigger a file download.
   export: (format: QuestionExportFormat, params?: Omit<QuestionSearchParams, 'q'>) =>
     api.get<Blob>('/api/questions/export', {
@@ -101,6 +105,12 @@ export const questionSetsApi = {
 
 export const statsApi = {
   get: () => api.get<Stats>('/api/stats/'),
+};
+
+export const learningApi = {
+  get: () => api.get<LearningPlan>('/api/learning/plan'),
+
+  regenerate: () => api.post<LearningPlan>('/api/learning/plan'),
 };
 
 export const interviewsApi = {

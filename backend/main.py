@@ -9,7 +9,7 @@ import logging
 
 from database import get_db, engine
 from models import Base
-from routes import questions, stats, auth, documents, interviews, admin
+from routes import questions, stats, auth, documents, interviews, admin, learning
 
 # Configure logging
 logging.basicConfig(
@@ -81,6 +81,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
 app.include_router(interviews.router, prefix="/api/interviews", tags=["interviews"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(learning.router, prefix="/api/learning", tags=["learning"])
 
 
 @app.get("/")

@@ -20,6 +20,25 @@ class QuestionBase(BaseModel):
     tags: Optional[str] = Field(
         None, max_length=500, description="Comma-separated tags", example="python,design,scalability"
     )
+    company: Optional[str] = Field(
+        None, max_length=100, description="Company the question targets (company-specific mode)", example="Acme Corp"
+    )
+
+    @field_validator("company")
+    @classmethod
+    def validate_company(cls, v: Optional[str]) -> Optional[str]:
+        """Validate and clean the optional company"""
+        if v is None:
+            return None
+
+        v = v.strip()
+        if not v:
+            return None
+
+        if len(v) > 100:
+            raise ValueError("company must not exceed 100 characters")
+
+        return v
 
     @field_validator("job_title")
     @classmethod
@@ -103,6 +122,23 @@ class QuestionUpdate(BaseModel):
     difficulty: Optional[int] = Field(None, ge=1, le=5, description="Difficulty level 1-5")
     is_flagged: Optional[bool] = Field(None, description="Whether question is flagged")
     tags: Optional[str] = Field(None, max_length=500, description="Comma-separated tags")
+    company: Optional[str] = Field(None, max_length=100, description="Company the question targets")
+
+    @field_validator("company")
+    @classmethod
+    def validate_company(cls, v: Optional[str]) -> Optional[str]:
+        """Validate and clean the optional company"""
+        if v is None:
+            return None
+
+        v = v.strip()
+        if not v:
+            return None
+
+        if len(v) > 100:
+            raise ValueError("company must not exceed 100 characters")
+
+        return v
 
     @field_validator("tags")
     @classmethod
@@ -148,6 +184,25 @@ class QuestionGenerateRequest(BaseModel):
     question_type: Optional[str] = Field(
         "mixed", description="'technical', 'behavioral', or 'mixed'", example="technical"
     )
+    company: Optional[str] = Field(
+        None, max_length=100, description="Optional company to tag the generated questions with", example="Acme Corp"
+    )
+
+    @field_validator("company")
+    @classmethod
+    def validate_company(cls, v: Optional[str]) -> Optional[str]:
+        """Validate and clean the optional company"""
+        if v is None:
+            return None
+
+        v = v.strip()
+        if not v:
+            return None
+
+        if len(v) > 100:
+            raise ValueError("company must not exceed 100 characters")
+
+        return v
 
     @field_validator("job_title")
     @classmethod
@@ -681,3 +736,68 @@ class StatsResponse(BaseModel):
             raise ValueError("total_question_sets cannot be negative")
 
         return self
+
+
+# ---------------------------------------------------------------------------
+# Plan 08 — company-specific question mode + AI learning plan.
+# Appended at the end of the file; the StatsResponse section above is owned by
+# plan 07 and must stay untouched.
+# ---------------------------------------------------------------------------
+LEARNING_PLAN_PRIORITIES = ("high", "medium", "low")
+
+
+class LearningPlanItem(BaseModel):
+    """One study item of a generated learning plan."""
+
+    topic: str = Field(..., min_length=1, max_length=200, description="Topic to study", example="Kubernetes")
+    reason: str = Field("", max_length=500, description="Why this topic is on the plan")
+    recommended_question_ids: List[int] = Field(
+        default_factory=list,
+        description="IDs of questions in the library that cover this topic",
+        example=[12, 18],
+    )
+    priority: str = Field("medium", description="One of: 'high', 'medium', 'low'", example="high")
+    estimated_hours: float = Field(1.0, gt=0.0, le=100.0, description="Estimated study time in hours", example=3.5)
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: Optional[str]) -> str:
+        """Fall back to 'medium' for unknown priorities."""
+        normalized = (v or "").strip().lower()
+        return normalized if normalized in LEARNING_PLAN_PRIORITIES else "medium"
+
+
+class LearningPlanWeakArea(BaseModel):
+    """A question type the user is currently weak in."""
+
+    question_type: str = Field(..., description="Question type", example="technical")
+    average_score: Optional[float] = Field(
+        None, ge=0.0, le=10.0, description="Mean overall score, null when there are no evaluations"
+    )
+    sample_size: int = Field(0, ge=0, description="Number of evaluations averaged", example=4)
+
+
+class LearningPlanResponse(BaseModel):
+    """Schema for a generated learning plan."""
+
+    summary: str = Field(..., description="One-paragraph overview of the plan")
+    items: List[LearningPlanItem] = Field(
+        default_factory=list,
+        description="Ordered study items, highest priority first",
+    )
+    source: str = Field(
+        "heuristic",
+        description="How the plan was produced: 'llm' or 'heuristic'",
+        example="heuristic",
+    )
+    generated_at: datetime = Field(..., description="When the plan was generated")
+    skill_match_percentage: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description="Resume/job-description skill match, null when no documents were uploaded",
+    )
+    missing_skills: List[str] = Field(default_factory=list, description="Skills the resume is missing")
+    weak_question_types: List[LearningPlanWeakArea] = Field(
+        default_factory=list, description="Question types with the lowest average score, weakest first"
+    )

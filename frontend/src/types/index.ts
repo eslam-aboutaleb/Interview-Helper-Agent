@@ -6,6 +6,7 @@ export interface Question {
   difficulty: number;
   is_flagged: boolean;
   tags?: string;
+  company?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -49,6 +50,7 @@ export interface QuestionGenerateRequest {
   job_title: string;
   count: number;
   question_type: 'technical' | 'behavioral' | 'mixed';
+  company?: string;
 }
 
 export interface QuestionCreateRequest {
@@ -57,12 +59,14 @@ export interface QuestionCreateRequest {
   question_type: 'technical' | 'behavioral';
   difficulty?: number;
   tags?: string;
+  company?: string;
 }
 
 export interface QuestionUpdateRequest {
   difficulty?: number;
   is_flagged?: boolean;
   tags?: string;
+  company?: string | null;
 }
 
 /* ---------- Mock interview ---------- */
@@ -171,4 +175,33 @@ export interface QuestionImportSummary {
   imported: number;
   skipped: number;
   errors: QuestionImportError[];
+}
+
+/* ---------- Company mode + learning plan (Plan 08) ---------- */
+
+export type LearningPlanPriority = 'high' | 'medium' | 'low';
+
+export interface LearningPlanItem {
+  topic: string;
+  reason: string;
+  recommended_question_ids: number[];
+  priority: LearningPlanPriority;
+  estimated_hours: number;
+}
+
+export interface LearningPlanWeakArea {
+  question_type: string;
+  average_score: number | null;
+  sample_size: number;
+}
+
+export interface LearningPlan {
+  summary: string;
+  items: LearningPlanItem[];
+  /** 'llm' when a model produced the plan, 'heuristic' for the rule-based fallback. */
+  source: 'llm' | 'heuristic';
+  generated_at: string;
+  skill_match_percentage: number | null;
+  missing_skills: string[];
+  weak_question_types: LearningPlanWeakArea[];
 }
