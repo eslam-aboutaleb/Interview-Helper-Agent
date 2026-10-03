@@ -1,23 +1,49 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, MessageSquare, SlidersHorizontal } from 'lucide-react';
+import {
+  Search,
+  Filter,
+  MessageSquare,
+  SlidersHorizontal,
+  Upload,
+  X,
+  FileJson,
+  FileSpreadsheet,
+} from 'lucide-react';
 import { questionsApi, parseAxiosError } from '../services/api';
-import { Question, QuestionUpdateRequest } from '../types';
+import {
+  Question,
+  QuestionCreateRequest,
+  QuestionExportFormat,
+  QuestionImportSummary,
+  QuestionUpdateRequest,
+} from '../types';
 import { ErrorResponse } from '../services/errorHandler';
 import QuestionCard from '../components/QuestionCard';
 import Alert from '../components/Alert';
 import EmptyState from '../components/EmptyState';
 import { Skeleton } from '../components/ui/Skeleton';
+import { Button } from '../components/ui/Button';
 import toast from 'react-hot-toast';
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 const Questions: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedJobTitle, setSelectedJobTitle] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce the search box so every keystroke does not hit the API.
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(searchTerm.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [searchTerm]);
 
   const {
     data: questions = [],
@@ -26,8 +52,8 @@ const Questions: React.FC = () => {
     error,
     refetch,
   } = useQuery<Question[]>({
-    queryKey: ['questions', 'all'],
-    queryFn: () => questionsApi.getAll({ limit: 1000 }).then((r) => r.data),
+    queryKey: ['questions', 'all', { q: debouncedSearch }],
+    queryFn: () => questionsApi.search(debouncedSearch, { limit: 1000 }).then((r) => r.data),
   });
 
   const { data: jobTitles = [] } = useQuery<string[]>({
@@ -65,16 +91,79 @@ const Questions: React.FC = () => {
     },
   });
 
+  const exportMutation = useMutation({
+    mutationFn: (format: QuestionExportFormat) => questionsApi.export(format, { limit: 1000 }),
+    onSuccess: (response, format) => {
+      const blob = new Blob([response.data], {
+        type: format === 'csv' ? 'text/csv' : 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `questions.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported questions as ${format.toUpperCase()}`);
+    },
+    onError: (err: unknown) => {
+      const parsed = parseAxiosError(err);
+      toast.error(`Failed to export questions: ${parsed.message}`);
+    },
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async (file: File): Promise<QuestionImportSummary> => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        throw new Error('Import file must contain valid JSON');
+      }
+      if (!Array.isArray(parsed)) {
+        throw new Error('Import file must contain a JSON array of questions');
+      }
+      const response = await questionsApi.importQuestions(parsed as QuestionCreateRequest[]);
+      return response.data;
+    },
+    onSuccess: (summary) => {
+      toast.success(
+        `Imported ${summary.imported} question${summary.imported === 1 ? '' : 's'}` +
+          (summary.skipped ? `, skipped ${summary.skipped}` : '')
+      );
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['job-titles'] });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : parseAxiosError(err).message;
+      toast.error(`Failed to import questions: ${message}`);
+    },
+  });
+
   const filteredQuestions = useMemo(() => {
     return questions.filter((question) => {
-      const matchesSearch =
-        question.question_text.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        question.job_title.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = selectedType === 'all' || question.question_type === selectedType;
       const matchesJob = selectedJobTitle === 'all' || question.job_title === selectedJobTitle;
-      return matchesSearch && matchesType && matchesJob;
+      return matchesType && matchesJob;
     });
-  }, [questions, searchTerm, selectedType, selectedJobTitle]);
+  }, [questions, selectedType, selectedJobTitle]);
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedType('all');
+    setSelectedJobTitle('all');
+  };
+
+  const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Reset the input so selecting the same file again re-triggers the change.
+    event.target.value = '';
+    if (file) {
+      importMutation.mutate(file);
+    }
+  };
 
   const toggleFlag = (questionId: number) => {
     const question = questions.find((q) => q.id === questionId);
@@ -139,7 +228,7 @@ const Questions: React.FC = () => {
 
       {/* Header */}
       <motion.div
-        className="flex items-center justify-between"
+        className="flex flex-wrap items-center justify-between gap-4"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
@@ -149,16 +238,55 @@ const Questions: React.FC = () => {
           <p className="text-gray-600 mt-2">Manage and organize your interview questions</p>
         </div>
 
-        <motion.button
-          onClick={() => setShowFilters(!showFilters)}
-          aria-label="Toggle filters"
-          className="md:hidden flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors duration-200"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          <span>Filters</span>
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportMutation.mutate('json')}
+            isLoading={exportMutation.isPending && exportMutation.variables === 'json'}
+            aria-label="Export questions as JSON"
+          >
+            <FileJson className="w-4 h-4" aria-hidden="true" />
+            JSON
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportMutation.mutate('csv')}
+            isLoading={exportMutation.isPending && exportMutation.variables === 'csv'}
+            aria-label="Export questions as CSV"
+          >
+            <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />
+            CSV
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleFileSelected}
+            aria-label="Import questions from a JSON file"
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            isLoading={importMutation.isPending}
+          >
+            <Upload className="w-4 h-4" aria-hidden="true" />
+            Import
+          </Button>
+          <motion.button
+            onClick={() => setShowFilters(!showFilters)}
+            aria-label="Toggle filters"
+            className="md:hidden flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors duration-200"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>Filters</span>
+          </motion.button>
+        </div>
       </motion.div>
 
       {/* Filters */}
@@ -185,6 +313,16 @@ const Questions: React.FC = () => {
               aria-label="Search questions"
               className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors duration-200"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           {/* Type Filter */}
@@ -227,17 +365,21 @@ const Questions: React.FC = () => {
 
       {/* Questions List */}
       <div className="space-y-4">
-        {filteredQuestions.length === 0 && questions.length > 0 ? (
+        {questions.length === 0 && debouncedSearch ? (
+          <EmptyState
+            title="No questions found"
+            message={`No questions match "${debouncedSearch}". Try a different search term or clear your filters.`}
+            icon={<Search className="w-12 h-12 text-gray-400" />}
+            actionLabel="Clear Search"
+            onAction={clearFilters}
+          />
+        ) : filteredQuestions.length === 0 && questions.length > 0 ? (
           <EmptyState
             title="No questions match your filters"
-            message={`Try adjusting your search or filters. There are ${questions.length} questions available in total.`}
+            message={`Try adjusting your filters. There are ${questions.length} questions available in total.`}
             icon={<MessageSquare className="w-12 h-12 text-gray-400" />}
             actionLabel="Clear Filters"
-            onAction={() => {
-              setSearchTerm('');
-              setSelectedType('all');
-              setSelectedJobTitle('all');
-            }}
+            onAction={clearFilters}
           />
         ) : questions.length === 0 ? (
           <EmptyState

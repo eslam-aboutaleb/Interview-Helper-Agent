@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+import csv
+import io
 import json
 
 # Import database connection handler
@@ -33,6 +39,28 @@ from deps import get_optional_user
 # Initialize FastAPI router for question-related endpoints
 router = APIRouter()
 
+# Columns scanned by the free-text search, in priority order.
+SEARCH_COLUMNS = (Question.question_text, Question.job_title, Question.tags)
+
+# Column order used by the CSV export.
+CSV_EXPORT_COLUMNS = (
+    "id",
+    "job_title",
+    "question_text",
+    "question_type",
+    "difficulty",
+    "is_flagged",
+    "tags",
+    "created_at",
+)
+
+# Supported values for the ``format`` query parameter of the export endpoint.
+EXPORT_FORMATS = ("json", "csv")
+
+# Leading characters that make a spreadsheet treat a cell as a formula.
+# Tab and carriage return are included because Excel also honours them.
+CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
 # Lazy singleton for the Gemini service so a missing/invalid API key does not
 # crash the application at import time.
 _gemini_service: Optional[GeminiService] = None
@@ -44,6 +72,142 @@ def get_gemini_service() -> GeminiService:
     if _gemini_service is None:
         _gemini_service = GeminiService()
     return _gemini_service
+
+
+def escape_like(term: str) -> str:
+    """Escape LIKE wildcards so a user term is matched literally.
+
+    Values are always passed to the driver as bound parameters; escaping only
+    prevents ``%`` and ``_`` from turning into unintended wildcards.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def build_search_filter(dialect_name: str, term: str) -> Tuple[Any, Optional[Any]]:
+    """Build the full-text search predicate for the active dialect.
+
+    Postgres uses ``to_tsvector``/``websearch_to_tsquery`` computed on the fly
+    over ``question_text``, ``job_title`` and ``tags``; every other dialect
+    (SQLite in tests) falls back to a case-insensitive ``ILIKE`` over the same
+    columns.
+
+    Args:
+        dialect_name: ``db.bind.dialect.name`` — read at query time so the
+            module still imports cleanly on dialects without tsvector support.
+        term: The already-stripped, non-empty search term.
+
+    Returns:
+        A ``(criterion, rank)`` tuple. ``rank`` is a relevance expression on
+        Postgres and ``None`` on dialects without ranking support.
+    """
+    if dialect_name == "postgresql":
+        document = func.concat_ws(
+            " ",
+            func.coalesce(Question.question_text, ""),
+            func.coalesce(Question.job_title, ""),
+            func.coalesce(Question.tags, ""),
+        )
+        tsvector = func.to_tsvector("english", document)
+        tsquery = func.websearch_to_tsquery("english", term)
+        return tsvector.op("@@")(tsquery), func.ts_rank(tsvector, tsquery).label("rank")
+
+    pattern = f"%{escape_like(term)}%"
+    criterion = or_(*(column.ilike(pattern, escape="\\") for column in SEARCH_COLUMNS))
+    return criterion, None
+
+
+def apply_question_filters(
+    query,
+    dialect_name: str,
+    job_title: Optional[str] = None,
+    question_type: Optional[str] = None,
+    flagged_only: bool = False,
+    q: Optional[str] = None,
+) -> Tuple[Any, Optional[Any]]:
+    """Apply the shared list/export filters to a ``Question`` query.
+
+    Args:
+        query: The base ``db.query(Question)`` query.
+        dialect_name: Active SQLAlchemy dialect name (see ``build_search_filter``).
+        job_title: Optional case-insensitive partial job-title filter.
+        question_type: Optional exact type filter.
+        flagged_only: When True, restrict to flagged questions.
+        q: Optional free-text search term.
+
+    Returns:
+        A ``(query, rank)`` tuple where ``rank`` is the relevance expression
+        for ordering, or ``None`` when the dialect has no ranking support.
+
+    Raises:
+        HTTPException 400: If ``question_type`` is not a supported value.
+    """
+    if job_title and job_title.strip():
+        query = query.filter(Question.job_title.ilike(f"%{escape_like(job_title.strip())}%", escape="\\"))
+
+    if question_type:
+        if question_type not in ["technical", "behavioral", "mixed"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="question_type must be 'technical', 'behavioral', or 'mixed'",
+            )
+        query = query.filter(Question.question_type == question_type)
+
+    if flagged_only:
+        query = query.filter(Question.is_flagged)
+
+    rank = None
+    if q and q.strip():
+        criterion, rank = build_search_filter(dialect_name, q.strip())
+        query = query.filter(criterion)
+
+    if rank is not None:
+        query = query.order_by(rank.desc(), Question.created_at.desc())
+    else:
+        query = query.order_by(Question.created_at.desc())
+
+    return query, rank
+
+
+def sanitize_csv_cell(value: Any) -> str:
+    """Neutralize spreadsheet formula injection in an exported CSV cell.
+
+    A leading ``=``, ``+``, ``-`` or ``@`` (or a leading tab/carriage return)
+    is prefixed with a single quote so spreadsheets render the value as text.
+    """
+    text = "" if value is None else str(value)
+    if text[:1] in CSV_INJECTION_PREFIXES:
+        return f"'{text}"
+    return text
+
+
+def questions_csv_document(questions: List[Question]) -> str:
+    """Render questions as a properly quoted CSV document."""
+    buffer = io.StringIO(newline="")
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(CSV_EXPORT_COLUMNS)
+    for question in questions:
+        writer.writerow([sanitize_csv_cell(getattr(question, column, "")) for column in CSV_EXPORT_COLUMNS])
+    return buffer.getvalue()
+
+
+def questions_json_chunks(questions: List[Question]) -> Iterator[str]:
+    """Yield a JSON array of questions one serialized element at a time.
+
+    Streaming keeps memory flat for large banks and still produces a single
+    valid JSON document.
+    """
+    yield "["
+    for index, question in enumerate(questions):
+        serialized = QuestionSchema.model_validate(question).model_dump_json()
+        yield f"{'' if index == 0 else ','}{serialized}"
+    yield "]"
+
+
+def format_validation_error(exc: ValidationError) -> str:
+    """Flatten a Pydantic validation error into one readable message."""
+    return "; ".join(
+        f"{'.'.join(str(part) for part in error['loc']) or 'entry'}: {error['msg']}" for error in exc.errors()
+    )
 
 
 @router.post("/generate", response_model=List[QuestionSchema], status_code=status.HTTP_201_CREATED)
@@ -135,6 +299,12 @@ async def get_questions(
     limit: int = Query(
         100, ge=1, le=1000, description="Maximum number of records to return (max 1000)", title="Pagination Limit"
     ),
+    q: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Free-text search across question text, job title, and tags",
+        title="Search Query",
+    ),
     job_title: Optional[str] = Query(
         None, description="Filter by job title (case-insensitive partial match)", title="Job Title Filter"
     ),
@@ -146,36 +316,40 @@ async def get_questions(
     ),
     db: Session = Depends(get_db),
 ):
-    """Get questions with filtering and pagination options
+    """Get questions with filtering, full-text search, and pagination options
 
-    Returns paginated list of questions with optional filtering by job title, type, and flagged status.
+    Returns a paginated list of questions with optional filtering by job title,
+    type, and flagged status. When ``q`` is provided the search runs against
+    ``question_text``, ``job_title`` and ``tags`` using Postgres full-text
+    search (ordered by relevance) or an ILIKE fallback on other dialects
+    (ordered by ``created_at``).
+
+    Args:
+        skip: Number of records to skip (pagination offset)
+        limit: Maximum number of records to return
+        q: Free-text search term; blank values fall through to the normal list
+        job_title: Case-insensitive partial job-title filter
+        question_type: Exact question-type filter
+        flagged_only: Return only flagged questions
+        db: Database session dependency
+
+    Returns:
+        List of Question objects matching the filters
 
     Raises:
-        HTTPException 400: If pagination parameters are invalid
+        HTTPException 400: If pagination or filter parameters are invalid
         HTTPException 500: If database query fails
     """
     try:
-        # Build the base query
-        query = db.query(Question)
-
-        # Apply filters based on parameters if provided
-        if job_title and job_title.strip():
-            # Case-insensitive partial matching for job title
-            query = query.filter(Question.job_title.ilike(f"%{job_title}%"))
-
-        if question_type:
-            # Validate question type
-            if question_type not in ["technical", "behavioral", "mixed"]:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="question_type must be 'technical', 'behavioral', or 'mixed'",
-                )
-            # Exact matching for question type
-            query = query.filter(Question.question_type == question_type)
-
-        if flagged_only:
-            # Filter only flagged questions
-            query = query.filter(Question.is_flagged)
+        # Build the base query and apply the shared filters
+        query, _ = apply_question_filters(
+            db.query(Question),
+            dialect_name=db.bind.dialect.name,
+            job_title=job_title,
+            question_type=question_type,
+            flagged_only=flagged_only,
+            q=q,
+        )
 
         # Execute query with pagination
         questions = query.offset(skip).limit(limit).all()
@@ -187,6 +361,172 @@ async def get_questions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve questions: {str(e)}"
         )
+
+
+# NOTE: /export and /import are declared before the /{question_id} routes on
+# purpose — a dynamic path declared first would swallow them.
+@router.get("/export")
+async def export_questions(
+    format: str = Query("json", description="Export format: 'json' or 'csv'", title="Export Format"),
+    q: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Free-text search across question text, job title, and tags",
+        title="Search Query",
+    ),
+    job_title: Optional[str] = Query(
+        None, description="Filter by job title (case-insensitive partial match)", title="Job Title Filter"
+    ),
+    question_type: Optional[str] = Query(
+        None, description="Filter by question type: 'technical' or 'behavioral'", title="Question Type Filter"
+    ),
+    flagged_only: bool = Query(
+        False, description="If True, export only flagged questions", title="Flagged Questions Only"
+    ),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Export questions as a downloadable JSON or CSV file
+
+    Streams the questions reachable with the existing visibility model (all
+    questions are shared in this app) using the same filters as the list
+    endpoint. CSV cells starting with ``=``, ``+``, ``-`` or ``@`` are
+    prefixed with a single quote to prevent spreadsheet formula injection.
+
+    Args:
+        format: 'json' or 'csv'
+        q: Optional free-text search term
+        job_title: Optional case-insensitive partial job-title filter
+        question_type: Optional exact question-type filter
+        flagged_only: Export only flagged questions
+        db: Database session dependency
+
+    Returns:
+        A StreamingResponse with the file as an attachment
+
+    Raises:
+        HTTPException 400: If format is not 'json' or 'csv', or a filter is invalid
+        HTTPException 500: If the database query fails
+    """
+    export_format = (format or "").strip().lower()
+    if export_format not in EXPORT_FORMATS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="format must be 'json' or 'csv'",
+        )
+
+    try:
+        query, _ = apply_question_filters(
+            db.query(Question),
+            dialect_name=db.bind.dialect.name,
+            job_title=job_title,
+            question_type=question_type,
+            flagged_only=flagged_only,
+            q=q,
+        )
+        questions = query.all()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to export questions: {str(e)}"
+        )
+
+    headers = {"Content-Disposition": f'attachment; filename="questions.{export_format}"'}
+
+    if export_format == "csv":
+        return StreamingResponse(
+            iter([questions_csv_document(questions)]),
+            media_type="text/csv; charset=utf-8",
+            headers=headers,
+        )
+
+    return StreamingResponse(
+        questions_json_chunks(questions),
+        media_type="application/json",
+        headers=headers,
+    )
+
+
+@router.post("/import")
+async def import_questions(
+    payload: List[Any],
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """Import questions from a JSON array
+
+    Each entry is validated independently against ``QuestionCreate``; invalid
+    entries are skipped and reported instead of failing the whole batch.
+
+    Args:
+        payload: JSON array of question objects (``QuestionCreate`` shape)
+        db: Database session dependency
+        current_user: Authenticated user (optional)
+
+    Returns:
+        Summary dict with ``imported``, ``skipped`` and per-entry ``errors``
+
+    Raises:
+        HTTPException 400: If the payload is empty
+        HTTPException 422: If the body is not a JSON array
+        HTTPException 500: If the batch cannot be committed
+    """
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="payload must contain at least one question",
+        )
+
+    imported = 0
+    skipped = 0
+    errors: List[Dict[str, Any]] = []
+
+    for index, entry in enumerate(payload):
+        # Validate the entry on its own so one bad record cannot reject the batch.
+        try:
+            if not isinstance(entry, dict):
+                raise ValueError("entry must be a JSON object")
+            data = QuestionCreate.model_validate(entry).model_dump()
+            data["user_id"] = current_user.id if current_user else None
+            question = Question(**data)
+        except ValidationError as exc:
+            skipped += 1
+            errors.append({"index": index, "error": format_validation_error(exc)})
+            continue
+        except ValueError as exc:
+            skipped += 1
+            errors.append({"index": index, "error": str(exc)})
+            continue
+
+        # A savepoint keeps a database-level failure scoped to this entry.
+        try:
+            with db.begin_nested():
+                db.add(question)
+                db.flush()
+            imported += 1
+        except (IntegrityError, ValueError) as exc:
+            skipped += 1
+            errors.append({"index": index, "error": str(getattr(exc, "orig", None) or exc)})
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to import questions: {str(e)}"
+        )
+
+    # Track the import in user history
+    if current_user and imported:
+        record_action(
+            db,
+            action="created",
+            user_id=current_user.id,
+            context={"source": "import", "count": imported},
+        )
+
+    return {"imported": imported, "skipped": skipped, "errors": errors}
 
 
 @router.get("/{question_id}", response_model=QuestionSchema, status_code=status.HTTP_200_OK)

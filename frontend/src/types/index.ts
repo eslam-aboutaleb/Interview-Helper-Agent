@@ -148,3 +148,27 @@ export interface SkillGap {
   extra_skills: string[];
   summary: string;
 }
+
+/* ---------- Question search, export and import (Plan 09) ---------- */
+
+export type QuestionExportFormat = 'json' | 'csv';
+
+export interface QuestionSearchParams {
+  q?: string;
+  skip?: number;
+  limit?: number;
+  job_title?: string;
+  question_type?: string;
+  flagged_only?: boolean;
+}
+
+export interface QuestionImportError {
+  index: number;
+  error: string;
+}
+
+export interface QuestionImportSummary {
+  imported: number;
+  skipped: number;
+  errors: QuestionImportError[];
+}
