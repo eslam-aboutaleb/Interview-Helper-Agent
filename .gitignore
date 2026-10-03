@@ -56,3 +56,10 @@ terraform.rc
 # Python virtualenv
 venv/
 .venv/
+
+# Coverage and pytest artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
